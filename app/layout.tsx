@@ -45,9 +45,7 @@ export default function RootLayout({
             <div className="w-full flex-none md:w-64">
               <SideNav />
             </div>
-            <main className="flex-grow p-6 md:overflow-y-auto md:p-12">
-              {children}
-            </main>
+            <main className="flex-grow p-6 md:overflow-y-auto">{children}</main>
           </div>
         </Providers>
       </body>
