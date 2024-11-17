@@ -20,9 +20,6 @@ import transactionsData from "@/transactions.json";
 const prettyPrint = (value: any): string => {
   if (value instanceof Date) {
     return value.toISOString().split("T")[0];
-  } else if (!isNaN(Date.parse(value))) {
-    const date = new Date(value);
-    return date.toISOString().split("T")[0];
   } else if (typeof value === "number") {
     return value.toLocaleString();
   } else if (typeof value === "string") {
@@ -44,11 +41,11 @@ export default function ExpensesPage() {
 
   const transactions = transactionsData
     .map((transaction, key) => ({
+      key,
       ...transaction,
       date: new Date(transaction.date),
-      key,
     }))
-    .sort((a, b) => b.date.getTime() - a.date.getTime());
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const columns = Object.keys(transactionsData[0]).map((k) => ({
     key: k,
@@ -59,13 +56,24 @@ export default function ExpensesPage() {
     async load({ cursor }) {
       setLoading(true);
       const start = cursor ?? 0;
-      const items = transactions.slice(start, start + PAGE_SIZE);
+      const items = transactions.reverse().slice(start, start + PAGE_SIZE);
       cursor = start + PAGE_SIZE;
       setPage((prev) => prev + 1);
       setLoading(false);
       return { items, cursor };
     },
   });
+
+
+  const createNewTransaction = () => {
+    const length = transactions.length
+    const newTransaction = transactions[length - 1];
+    Object.keys(newTransaction).forEach(k => newTransaction[k] = "");
+    newTransaction.key = length;
+    newTransaction.date = transactions[0].date;
+    transactions.push(newTransaction);
+    transactionsList.items = transactions.reverse().slice(start, start + PAGE_SIZE);
+  }
 
   return (
     <div className="flex flex-col h-[94vh]">
