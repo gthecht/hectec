@@ -1,4 +1,4 @@
-use std::fs;
+use std::{cmp::Ordering, fs};
 
 use color_eyre::Result;
 use crossterm::event::KeyModifiers;
@@ -83,28 +83,95 @@ struct Transaction {
     method: String,
 }
 
+struct Column {
+    name: String,
+    pub width: u16,
+}
+
+impl Column {
+    pub fn new(name: &str, width: u16) -> Self {
+        Self {
+            name: name.to_string(),
+            width,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Transaction {
+    pub fn sort(a: &Transaction, b: &Transaction, column: &Column) -> Ordering {
+        match column.name() {
+            "Date" => a.date.cmp(&b.date),
+            "Amount" => a.amount.partial_cmp(&b.amount).expect("amount not defined"),
+            "Details" => a.details.cmp(&b.details),
+            "Category" => a.category.cmp(&b.category),
+            "Method" => a.method.cmp(&b.method),
+            "Currency" => a.currency.cmp(&b.currency),
+            &_ => a.date.cmp(&b.date), //warn("column not recognized")
+        }
+    }
+
+    pub fn generate_row(&self) -> Row {
+        Row::new(vec![
+            Cell::from(Text::from(format!(
+                "\n{}\n",
+                self.date
+                    .format(&format_description::parse("[year]-[month]-[day]").unwrap())
+                    .unwrap()
+            ))),
+            Cell::from(Text::from(format!("\n{}\n", self.amount))),
+            Cell::from(Text::from(format!("\n{}\n", self.details))),
+            Cell::from(Text::from(format!("\n{}\n", self.category))),
+            Cell::from(Text::from(format!("\n{}\n", self.method))),
+            Cell::from(Text::from(format!("\n{}\n", self.currency))),
+        ])
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum SortOrder {
+    Ascending,
+    Descending,
+}
+
+impl std::ops::Not for SortOrder {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            SortOrder::Ascending => SortOrder::Descending,
+            SortOrder::Descending => SortOrder::Ascending,
+        }
+    }
+}
+
 struct App {
     state: TableState,
     items: Vec<Transaction>,
-    columns: Vec<String>,
+    columns: Vec<Column>,
     scroll_state: ScrollbarState,
-    sort_state: (usize, bool),
+    sort_state: (usize, SortOrder),
     colors: TableColors,
     color_index: usize,
 }
 
 impl App {
     fn new(items: Vec<Transaction>) -> Self {
-        let columns: Vec<String> = [
-            "Date", "Amount", "Details", "Category", "Method", "Currency",
-        ]
-        .into_iter()
-        .map(|col| col.to_string())
-        .collect();
+        let columns: Vec<Column> = vec![
+            Column::new("Date", 11),
+            Column::new("Amount", 10),
+            Column::new("Details", 100),
+            Column::new("Category", 15),
+            Column::new("Method", 11),
+            Column::new("Currency", 9),
+        ];
         Self {
             state: TableState::default().with_selected(0),
             scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
-            sort_state: (0, true),
+            sort_state: (0, SortOrder::Ascending),
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
             columns,
@@ -177,33 +244,19 @@ impl App {
     }
 
     pub fn sort_by_column(&mut self) {
-        if let Some(column) = self.state.selected_column() {
-            if self.sort_state.0 == column {
+        if let Some(column_index) = self.state.selected_column() {
+            if self.sort_state.0 == column_index {
                 self.sort_state.1 = !self.sort_state.1;
             } else {
-                self.sort_state.1 = true;
+                self.sort_state.1 = SortOrder::Ascending;
             }
-            self.sort_state.0 = column;
-            match self.columns.get(column) {
-                Some(selected_column) => {
-                    self.items.sort_by(|a, b| {
-                        let first = if self.sort_state.1 { a } else { b };
-                        let second = if self.sort_state.1 { b } else { a };
-                        match selected_column.as_str() {
-                            "Date" => first.date.cmp(&second.date),
-                            "Amount" => first
-                                .amount
-                                .partial_cmp(&second.amount)
-                                .expect("amount not defined"),
-                            "Details" => first.details.cmp(&second.details),
-                            "Category" => first.category.cmp(&second.category),
-                            "Method" => first.method.cmp(&second.method),
-                            "Currency" => first.currency.cmp(&second.currency),
-                            &_ => first.date.cmp(&second.date), //warn("column not recognized")
-                        }
-                    })
-                }
-                None => {} //warn("select a column before sorting by it")},
+            self.sort_state.0 = column_index;
+            match self.columns.get(column_index) {
+                Some(selected_column) => self.items.sort_by(|a, b| match self.sort_state.1 {
+                    SortOrder::Ascending => Transaction::sort(a, b, selected_column),
+                    SortOrder::Descending => Transaction::sort(b, a, selected_column),
+                }),
+                None => {}
             }
         }
     }
@@ -261,7 +314,7 @@ impl App {
         let header = self
             .columns
             .iter()
-            .map(|col| Cell::from(col.to_string()))
+            .map(|col| Cell::from(col.name().to_string()))
             .collect::<Row>()
             .style(header_style)
             .height(1);
@@ -270,24 +323,12 @@ impl App {
                 0 => self.colors.normal_row_color,
                 _ => self.colors.alt_row_color,
             };
-            Row::new(vec![
-                Cell::from(Text::from(format!(
-                    "\n{}\n",
-                    item.date
-                        .format(&format_description::parse("[year]-[month]-[day]").unwrap())
-                        .unwrap()
-                ))),
-                Cell::from(Text::from(format!("\n{}\n", item.amount))),
-                Cell::from(Text::from(format!("\n{}\n", item.details))),
-                Cell::from(Text::from(format!("\n{}\n", item.category))),
-                Cell::from(Text::from(format!("\n{}\n", item.method))),
-                Cell::from(Text::from(format!("\n{}\n", item.currency))),
-            ])
-            .style(Style::new().fg(self.colors.row_fg).bg(color))
-            .height(3)
+            let row = item.generate_row();
+            row.style(Style::new().fg(self.colors.row_fg).bg(color))
+                .height(3)
         });
         let bar = " █ ";
-        let t = Table::new(rows, [11, 9, 100, 10, 10, 10])
+        let t = Table::new(rows, self.columns.iter().map(|col| col.width))
             .header(header)
             .row_highlight_style(selected_row_style)
             .column_highlight_style(selected_col_style)
