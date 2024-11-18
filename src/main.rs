@@ -24,8 +24,8 @@ const PALETTES: [tailwind::Palette; 4] = [
     tailwind::RED,
 ];
 const INFO_TEXT: [&str; 2] = [
-    "(Esc) quit | (↑) move up | (↓) move down | (←) move left | (→) move right | HOME go to first | END go to last",
-    "(Shift + →) next color | (Shift + ←) previous color",
+    "(q) quit | (↑) move up | (↓) move down | (←) move left | (→) move right | HOME go to first | END go to last",
+    "(f) filter by selected column | (Shift + →) next color | (Shift + ←) previous color",
 ];
 
 const ITEM_HEIGHT: usize = 4;
@@ -89,6 +89,7 @@ struct App {
     items: Vec<Transaction>,
     columns: Vec<String>,
     scroll_state: ScrollbarState,
+    sort_state: (usize, bool),
     colors: TableColors,
     color_index: usize,
 }
@@ -104,6 +105,7 @@ impl App {
         Self {
             state: TableState::default().with_selected(0),
             scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
+            sort_state: (0, true),
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
             columns,
@@ -175,6 +177,39 @@ impl App {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
     }
 
+    pub fn sort_by_column(&mut self) {
+        if let Some(column) = self.state.selected_column() {
+            if self.sort_state.0 == column {
+                self.sort_state.1 = !self.sort_state.1;
+            } else {
+                self.sort_state.1 = true;
+            }
+            self.sort_state.0 = column;
+            match self.columns.get(column) {
+                Some(selected_column) => {
+                    self.items.sort_by(|a, b| {
+                        let first = if self.sort_state.1 { a } else { b };
+                        let second = if self.sort_state.1 { b } else { a };
+                        match selected_column.as_str() {
+                            "Date" => first.date.cmp(&second.date),
+                            "Amount" => first
+                                .amount
+                                .partial_cmp(&second.amount)
+                                .expect("amount not defined"),
+                            "Details" => first.details.cmp(&second.details),
+                            "Category" => first.category.cmp(&second.category),
+                            "Method" => first.method.cmp(&second.method),
+                            "In\\Out" => first.in_out.cmp(&second.in_out),
+                            "Currency" => first.currency.cmp(&second.currency),
+                            &_ => first.date.cmp(&second.date), //warn("column not recognized")
+                        }
+                    })
+                }
+                None => {} //warn("select a column before sorting by it")},
+            }
+        }
+    }
+
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
@@ -194,6 +229,7 @@ impl App {
                         KeyCode::Char('h') | KeyCode::Left => self.previous_column(),
                         KeyCode::Home => self.first_row(),
                         KeyCode::End => self.last_row(),
+                        KeyCode::Char('f') => self.sort_by_column(),
                         _ => {}
                     }
                 }
