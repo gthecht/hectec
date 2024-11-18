@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, fs};
 
 use color_eyre::Result;
-use crossterm::event::KeyModifiers;
+use crossterm::event::{KeyEvent, KeyModifiers};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Rect},
@@ -148,14 +148,21 @@ impl std::ops::Not for SortOrder {
     }
 }
 
+enum InputMode {
+    View,
+    Edit,
+    Quit,
+}
+
 struct App {
-    state: TableState,
-    items: Vec<Transaction>,
-    columns: Vec<Column>,
-    scroll_state: ScrollbarState,
-    sort_state: (usize, SortOrder),
     colors: TableColors,
     color_index: usize,
+    table_state: TableState,
+    scroll_state: ScrollbarState,
+    sort_state: (usize, SortOrder),
+    input_mode: InputMode,
+    columns: Vec<Column>,
+    items: Vec<Transaction>,
 }
 
 impl App {
@@ -169,23 +176,24 @@ impl App {
             Column::new("Currency", 9),
         ];
         Self {
-            state: TableState::default().with_selected(0),
-            scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
-            sort_state: (0, SortOrder::Ascending),
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
+            table_state: TableState::default().with_selected(0),
+            scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
+            sort_state: (0, SortOrder::Ascending),
+            input_mode: InputMode::View,
             columns,
             items,
         }
     }
 
     fn update_selected(&mut self, i: usize) {
-        self.state.select(Some(i));
+        self.table_state.select(Some(i));
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
     }
 
     pub fn next_row(&mut self) {
-        let i = match self.state.selected() {
+        let i = match self.table_state.selected() {
             Some(i) => {
                 if i >= self.items.len() - 1 {
                     0
@@ -199,7 +207,7 @@ impl App {
     }
 
     pub fn previous_row(&mut self) {
-        let i = match self.state.selected() {
+        let i = match self.table_state.selected() {
             Some(i) => {
                 if i == 0 {
                     self.items.len() - 1
@@ -223,11 +231,11 @@ impl App {
     }
 
     pub fn next_column(&mut self) {
-        self.state.select_next_column();
+        self.table_state.select_next_column();
     }
 
     pub fn previous_column(&mut self) {
-        self.state.select_previous_column();
+        self.table_state.select_previous_column();
     }
 
     pub fn next_color(&mut self) {
@@ -244,7 +252,7 @@ impl App {
     }
 
     pub fn sort_by_column(&mut self) {
-        if let Some(column_index) = self.state.selected_column() {
+        if let Some(column_index) = self.table_state.selected_column() {
             if self.sort_state.0 == column_index {
                 self.sort_state.1 = !self.sort_state.1;
             } else {
@@ -261,28 +269,88 @@ impl App {
         }
     }
 
+    fn handle_view_events(&mut self) -> Result<()> {
+        if let Event::Key(key) = event::read()? {
+            if key.kind == KeyEventKind::Press {
+                let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => self.input_mode = InputMode::Quit,
+                    KeyCode::Char('j') | KeyCode::Down => self.next_row(),
+                    KeyCode::Char('k') | KeyCode::Up => self.previous_row(),
+                    KeyCode::Char('l') | KeyCode::Right if shift_pressed => self.next_color(),
+                    KeyCode::Char('h') | KeyCode::Left if shift_pressed => {
+                        self.previous_color();
+                    }
+                    KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => self.next_column(),
+                    KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => self.previous_column(),
+                    KeyCode::Home => self.first_row(),
+                    KeyCode::End => self.last_row(),
+                    KeyCode::Char('f') => self.sort_by_column(),
+                    KeyCode::Char('e') | KeyCode::Enter => self.input_mode = InputMode::Edit,
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_edit_events(&mut self) -> Result<()> {
+        if let Event::Key(key) = event::read()? {
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Esc => self.input_mode = InputMode::View,
+                    KeyCode::Down => self.next_row(),
+                    KeyCode::Up => self.previous_row(),
+                    KeyCode::Tab => self.next_column(),
+                    KeyCode::BackTab => self.previous_column(),
+                    KeyCode::Char(char_to_insert) => {
+                        self.enter_char(char_to_insert);
+                        InputMode::Editing
+                    }
+                    KeyCode::Backspace => {
+                        self.delete_char();
+                        InputMode::Editing
+                    }
+                    KeyCode::Delete => {
+                        self.delete_char_forward();
+                        InputMode::Editing
+                    }
+                    KeyCode::Left => {
+                        self.move_cursor_left();
+                        InputMode::Editing
+                    }
+                    KeyCode::Right => {
+                        self.move_cursor_right();
+                        InputMode::Editing
+                    }
+                    KeyCode::End => {
+                        self.move_cursor_to_end();
+                        InputMode::Editing
+                    }
+                    KeyCode::Home => {
+                        self.move_cursor_home();
+                        InputMode::Editing
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                        KeyCode::Char('j') | KeyCode::Down => self.next_row(),
-                        KeyCode::Char('k') | KeyCode::Up => self.previous_row(),
-                        KeyCode::Char('l') | KeyCode::Right if shift_pressed => self.next_color(),
-                        KeyCode::Char('h') | KeyCode::Left if shift_pressed => {
-                            self.previous_color();
-                        }
-                        KeyCode::Char('l') | KeyCode::Right => self.next_column(),
-                        KeyCode::Char('h') | KeyCode::Left => self.previous_column(),
-                        KeyCode::Home => self.first_row(),
-                        KeyCode::End => self.last_row(),
-                        KeyCode::Char('f') => self.sort_by_column(),
-                        _ => {}
-                    }
+            match self.input_mode {
+                InputMode::Quit => return Ok(()),
+                InputMode::View => {
+                    self.handle_view_events()
+                        .expect("could not handle event correctly");
+                }
+                InputMode::Edit => {
+                    self.handle_edit_events()
+                        .expect("could not handle event correctly");
                 }
             }
         }
@@ -336,7 +404,7 @@ impl App {
             .highlight_symbol(Text::from(vec!["".into(), bar.into(), "".into()]))
             .bg(self.colors.buffer_bg)
             .highlight_spacing(HighlightSpacing::Always);
-        frame.render_stateful_widget(t, area, &mut self.state);
+        frame.render_stateful_widget(t, area, &mut self.table_state);
     }
 
     fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
