@@ -1,10 +1,10 @@
 use std::{cmp::Ordering, fs};
 
 use color_eyre::Result;
-use crossterm::event::{KeyEvent, KeyModifiers};
+use crossterm::event::KeyModifiers;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Margin, Rect},
+    layout::{Constraint, Layout, Margin, Position, Rect},
     style::{self, Color, Modifier, Style, Stylize},
     text::Text,
     widgets::{
@@ -25,7 +25,7 @@ const PALETTES: [tailwind::Palette; 4] = [
 ];
 const INFO_TEXT: [&str; 2] = [
     "(q) quit | (↑) move up | (↓) move down | (←) move left | (→) move right | HOME go to first | END go to last",
-    "(f) filter by selected column | (Shift + →) next color | (Shift + ←) previous color",
+    "(s) sort by selected column | (Shift + →) next color | (Shift + ←) previous color",
 ];
 
 const ITEM_HEIGHT: usize = 4;
@@ -161,6 +161,7 @@ struct App {
     scroll_state: ScrollbarState,
     sort_state: (usize, SortOrder),
     input_mode: InputMode,
+    cursor_position: Position,
     columns: Vec<Column>,
     items: Vec<Transaction>,
 }
@@ -182,14 +183,29 @@ impl App {
             scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
             sort_state: (0, SortOrder::Ascending),
             input_mode: InputMode::View,
+            cursor_position: Position::new(0, 0),
             columns,
             items,
+        }
+    }
+
+    fn update_cursor_position(&mut self) {
+        if let Some((row, column)) = self.table_state.selected_cell() {
+            let y: u16 = 3 * (row as u16 + 1) - 1;
+            let x: u16 = self
+                .columns
+                .iter()
+                .take(column)
+                .map(|col| col.width + 1)
+                .sum();
+            self.cursor_position = Position::new(x + 3, y);
         }
     }
 
     fn update_selected(&mut self, i: usize) {
         self.table_state.select(Some(i));
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+        self.update_cursor_position();
     }
 
     pub fn next_row(&mut self) {
@@ -232,10 +248,12 @@ impl App {
 
     pub fn next_column(&mut self) {
         self.table_state.select_next_column();
+        self.update_cursor_position();
     }
 
     pub fn previous_column(&mut self) {
         self.table_state.select_previous_column();
+        self.update_cursor_position();
     }
 
     pub fn next_color(&mut self) {
@@ -285,7 +303,7 @@ impl App {
                     KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => self.previous_column(),
                     KeyCode::Home => self.first_row(),
                     KeyCode::End => self.last_row(),
-                    KeyCode::Char('f') => self.sort_by_column(),
+                    KeyCode::Char('s') => self.sort_by_column(),
                     KeyCode::Char('e') | KeyCode::Enter => self.input_mode = InputMode::Edit,
                     _ => {}
                 }
@@ -303,34 +321,34 @@ impl App {
                     KeyCode::Up => self.previous_row(),
                     KeyCode::Tab => self.next_column(),
                     KeyCode::BackTab => self.previous_column(),
-                    KeyCode::Char(char_to_insert) => {
-                        self.enter_char(char_to_insert);
-                        InputMode::Editing
-                    }
-                    KeyCode::Backspace => {
-                        self.delete_char();
-                        InputMode::Editing
-                    }
-                    KeyCode::Delete => {
-                        self.delete_char_forward();
-                        InputMode::Editing
-                    }
-                    KeyCode::Left => {
-                        self.move_cursor_left();
-                        InputMode::Editing
-                    }
-                    KeyCode::Right => {
-                        self.move_cursor_right();
-                        InputMode::Editing
-                    }
-                    KeyCode::End => {
-                        self.move_cursor_to_end();
-                        InputMode::Editing
-                    }
-                    KeyCode::Home => {
-                        self.move_cursor_home();
-                        InputMode::Editing
-                    }
+                    // KeyCode::Char(char_to_insert) => {
+                    //     self.enter_char(char_to_insert);
+                    //     InputMode::Editing
+                    // }
+                    // KeyCode::Backspace => {
+                    //     self.delete_char();
+                    //     InputMode::Editing
+                    // }
+                    // KeyCode::Delete => {
+                    //     self.delete_char_forward();
+                    //     InputMode::Editing
+                    // }
+                    // KeyCode::Left => {
+                    //     self.move_cursor_left();
+                    //     InputMode::Editing
+                    // }
+                    // KeyCode::Right => {
+                    //     self.move_cursor_right();
+                    //     InputMode::Editing
+                    // }
+                    // KeyCode::End => {
+                    //     self.move_cursor_to_end();
+                    //     InputMode::Editing
+                    // }
+                    // KeyCode::Home => {
+                    //     self.move_cursor_home();
+                    //     InputMode::Editing
+                    // }
                     _ => {}
                 }
             }
@@ -365,6 +383,10 @@ impl App {
         self.render_table(frame, rects[0]);
         self.render_scrollbar(frame, rects[0]);
         self.render_footer(frame, rects[1]);
+        match self.input_mode {
+            InputMode::Edit => frame.set_cursor_position(self.cursor_position),
+            _ => {}
+        }
     }
 
     fn render_table(&mut self, frame: &mut Frame, area: Rect) {
