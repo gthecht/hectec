@@ -16,7 +16,6 @@ use ratatui::{
 use serde::{Deserialize, Serialize};
 use style::palette::tailwind;
 use time::{format_description, OffsetDateTime};
-use unicode_width::UnicodeWidthStr;
 
 const PALETTES: [tailwind::Palette; 4] = [
     tailwind::BLUE,
@@ -85,34 +84,10 @@ struct Transaction {
     in_out: String,
 }
 
-impl Transaction {
-    const fn ref_array(&self) -> [&String; 5] {
-        [
-            &self.details,
-            &self.category,
-            &self.method,
-            &self.in_out,
-            &self.currency,
-        ]
-    }
-
-    fn details(&self) -> &str {
-        &self.details
-    }
-
-    fn category(&self) -> &str {
-        &self.category
-    }
-
-    fn method(&self) -> &str {
-        &self.method
-    }
-}
-
 struct App {
     state: TableState,
     items: Vec<Transaction>,
-    longest_item_lens: (u16, u16, u16, u16, u16), // order is (name, address, email)
+    columns: Vec<String>,
     scroll_state: ScrollbarState,
     colors: TableColors,
     color_index: usize,
@@ -120,12 +95,18 @@ struct App {
 
 impl App {
     fn new(items: Vec<Transaction>) -> Self {
+        let columns: Vec<String> = [
+            "Date", "Amount", "Details", "Category", "Method", "In\\Out", "Currency",
+        ]
+        .into_iter()
+        .map(|col| col.to_string())
+        .collect();
         Self {
             state: TableState::default().with_selected(0),
-            longest_item_lens: constraint_len_calculator(&items),
             scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
+            columns,
             items,
         }
     }
@@ -243,48 +224,49 @@ impl App {
             .add_modifier(Modifier::REVERSED)
             .fg(self.colors.selected_cell_style_fg);
 
-        let header = ["Details", "Category", "Method", "In\\Out", "Currency"]
-            .into_iter()
-            .map(Cell::from)
+        let header = self
+            .columns
+            .iter()
+            .map(|col| Cell::from(col.to_string()))
             .collect::<Row>()
             .style(header_style)
             .height(1);
-        let rows = self.items.iter().enumerate().map(|(i, data)| {
+        let rows = self.items.iter().enumerate().map(|(i, item)| {
             let color = match i % 2 {
                 0 => self.colors.normal_row_color,
                 _ => self.colors.alt_row_color,
             };
-            let item = data.ref_array();
-            item.into_iter()
-                .map(|content| Cell::from(Text::from(format!("\n{content}\n"))))
-                .collect::<Row>()
-                .style(Style::new().fg(self.colors.row_fg).bg(color))
-                .height(4)
+            Row::new(vec![
+                Cell::from(Text::from(format!(
+                    "\n{}\n",
+                    item.date
+                        .format(&format_description::parse("[year]-[month]-[day]").unwrap())
+                        .unwrap()
+                ))),
+                Cell::from(Text::from(format!("\n{}\n", item.amount))),
+                Cell::from(Text::from(format!("\n{}\n", item.details))),
+                Cell::from(Text::from(format!("\n{}\n", item.category))),
+                Cell::from(Text::from(format!("\n{}\n", item.method))),
+                Cell::from(Text::from(format!("\n{}\n", item.in_out))),
+                Cell::from(Text::from(format!("\n{}\n", item.currency))),
+            ])
+            .style(Style::new().fg(self.colors.row_fg).bg(color))
+            .height(4)
         });
         let bar = " █ ";
-        let t = Table::new(
-            rows,
-            [
-                // + 1 is for padding.
-                Constraint::Length(self.longest_item_lens.0 + 1),
-                Constraint::Min(self.longest_item_lens.1 + 1),
-                Constraint::Min(self.longest_item_lens.2 + 1),
-                Constraint::Min(self.longest_item_lens.3 + 1),
-                Constraint::Min(self.longest_item_lens.4),
-            ],
-        )
-        .header(header)
-        .row_highlight_style(selected_row_style)
-        .column_highlight_style(selected_col_style)
-        .cell_highlight_style(selected_cell_style)
-        .highlight_symbol(Text::from(vec![
-            "".into(),
-            bar.into(),
-            bar.into(),
-            "".into(),
-        ]))
-        .bg(self.colors.buffer_bg)
-        .highlight_spacing(HighlightSpacing::Always);
+        let t = Table::new(rows, [11, 9, 100, 10, 10, 10, 4])
+            .header(header)
+            .row_highlight_style(selected_row_style)
+            .column_highlight_style(selected_col_style)
+            .cell_highlight_style(selected_cell_style)
+            .highlight_symbol(Text::from(vec![
+                "".into(),
+                bar.into(),
+                bar.into(),
+                "".into(),
+            ]))
+            .bg(self.colors.buffer_bg)
+            .highlight_spacing(HighlightSpacing::Always);
         frame.render_stateful_widget(t, area, &mut self.state);
     }
 
@@ -317,37 +299,4 @@ impl App {
             );
         frame.render_widget(info_footer, area);
     }
-}
-
-fn constraint_len_calculator(items: &[Transaction]) -> (u16, u16, u16, u16, u16) {
-    let details_len = items
-        .iter()
-        .map(Transaction::details)
-        .map(UnicodeWidthStr::width)
-        .max()
-        .unwrap_or(0);
-    let category_len = items
-        .iter()
-        .map(Transaction::category)
-        .flat_map(str::lines)
-        .map(UnicodeWidthStr::width)
-        .max()
-        .unwrap_or(0);
-    let method_len = items
-        .iter()
-        .map(Transaction::method)
-        .map(UnicodeWidthStr::width)
-        .max()
-        .unwrap_or(0);
-    let io_len: u16 = 1;
-    let currency_len: u16 = 3;
-
-    #[allow(clippy::cast_possible_truncation)]
-    (
-        details_len as u16,
-        category_len as u16,
-        method_len as u16,
-        io_len,
-        currency_len,
-    )
 }

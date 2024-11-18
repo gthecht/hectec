@@ -330,7 +330,6 @@ dependencies = [
  "serde",
  "serde_json",
  "time",
- "unicode-width 0.2.0",
 ]
 
 [[package]]
