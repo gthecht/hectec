@@ -81,7 +81,6 @@ struct Transaction {
     details: String,
     category: String,
     method: String,
-    in_out: String,
 }
 
 struct App {
@@ -97,7 +96,7 @@ struct App {
 impl App {
     fn new(items: Vec<Transaction>) -> Self {
         let columns: Vec<String> = [
-            "Date", "Amount", "Details", "Category", "Method", "In\\Out", "Currency",
+            "Date", "Amount", "Details", "Category", "Method", "Currency",
         ]
         .into_iter()
         .map(|col| col.to_string())
@@ -199,7 +198,6 @@ impl App {
                             "Details" => first.details.cmp(&second.details),
                             "Category" => first.category.cmp(&second.category),
                             "Method" => first.method.cmp(&second.method),
-                            "In\\Out" => first.in_out.cmp(&second.in_out),
                             "Currency" => first.currency.cmp(&second.currency),
                             &_ => first.date.cmp(&second.date), //warn("column not recognized")
                         }
@@ -283,14 +281,13 @@ impl App {
                 Cell::from(Text::from(format!("\n{}\n", item.details))),
                 Cell::from(Text::from(format!("\n{}\n", item.category))),
                 Cell::from(Text::from(format!("\n{}\n", item.method))),
-                Cell::from(Text::from(format!("\n{}\n", item.in_out))),
                 Cell::from(Text::from(format!("\n{}\n", item.currency))),
             ])
             .style(Style::new().fg(self.colors.row_fg).bg(color))
             .height(3)
         });
         let bar = " █ ";
-        let t = Table::new(rows, [11, 9, 100, 10, 10, 10, 4])
+        let t = Table::new(rows, [11, 9, 100, 10, 10, 10])
             .header(header)
             .row_highlight_style(selected_row_style)
             .column_highlight_style(selected_col_style)
