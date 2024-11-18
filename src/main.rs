@@ -287,7 +287,7 @@ impl App {
                 Cell::from(Text::from(format!("\n{}\n", item.currency))),
             ])
             .style(Style::new().fg(self.colors.row_fg).bg(color))
-            .height(4)
+            .height(3)
         });
         let bar = " █ ";
         let t = Table::new(rows, [11, 9, 100, 10, 10, 10, 4])
@@ -295,12 +295,7 @@ impl App {
             .row_highlight_style(selected_row_style)
             .column_highlight_style(selected_col_style)
             .cell_highlight_style(selected_cell_style)
-            .highlight_symbol(Text::from(vec![
-                "".into(),
-                bar.into(),
-                bar.into(),
-                "".into(),
-            ]))
+            .highlight_symbol(Text::from(vec!["".into(), bar.into(), "".into()]))
             .bg(self.colors.buffer_bg)
             .highlight_spacing(HighlightSpacing::Always);
         frame.render_stateful_widget(t, area, &mut self.state);
