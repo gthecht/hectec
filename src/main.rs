@@ -15,7 +15,7 @@ use ratatui::{
 };
 use serde::{Deserialize, Serialize};
 use style::palette::tailwind;
-use time::{format_description, OffsetDateTime};
+use time::{format_description, macros::format_description, Date, OffsetDateTime};
 
 const PALETTES: [tailwind::Palette; 4] = [
     tailwind::BLUE,
@@ -114,19 +114,34 @@ impl Transaction {
         }
     }
 
-    pub fn mutate_field(&mut self, column: &Column, input: &str) {
+    fn try_parse_date(&self, input: &str) -> Result<OffsetDateTime> {
+        let format = format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
+                 sign:mandatory]"
+        );
+        Ok(OffsetDateTime::parse(
+            &format!("{} 00:08:00 +02", input),
+            &format,
+        )?)
+    }
+
+    pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), String> {
         match column.name() {
-            "Date" => {}
+            "Date" => match self.try_parse_date(input) {
+                Ok(date) => self.date = date,
+                Err(_) => return Err(format!("failed to parse {} as date", input)),
+            },
             "Amount" => match f64::from_str(input) {
                 Ok(num) => self.amount = num,
-                Err(_) => {}
+                Err(_) => return Err(format!("failed to parse {} as number", input)),
             },
             "Details" => self.details = input.to_string(),
             "Category" => self.category = input.to_string(),
             "Method" => self.method = input.to_string(),
             "Currency" => self.currency = input.to_string(),
-            &_ => {} //warn("column not recognized")
+            &_ => todo!(), //warn("column not recognized")
         }
+        Ok(())
     }
 
     pub fn generate_row_text(&self) -> [String; 6] {
@@ -395,14 +410,15 @@ impl App {
         }
     }
 
-    fn commit_input(&mut self) {
+    fn commit_input(&mut self) -> Result<(), String> {
         if let Some((row, column_index)) = self.table_state.selected_cell() {
             if let Some(item) = self.items.get_mut(row) {
                 if let Some(column) = self.columns.get(column_index) {
-                    item.mutate_field(column, &self.input);
+                    item.mutate_field(column, &self.input)?
                 }
             }
         }
+        Ok(())
     }
 
     fn handle_edit_events(&mut self) -> Result<()> {
@@ -411,8 +427,10 @@ impl App {
                 match key.code {
                     KeyCode::Esc => self.input_mode = InputMode::View,
                     KeyCode::Enter => {
-                        self.commit_input();
-                        self.next_row();
+                        match self.commit_input() {
+                            Ok(()) => self.next_row(),
+                            Err(error) => self.input = error,
+                        }
                         self.input_mode = InputMode::View;
                     }
                     KeyCode::Down => self.next_row(),
