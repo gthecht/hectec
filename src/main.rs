@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fs};
+use std::{cmp::Ordering, fs, str::FromStr};
 
 use color_eyre::Result;
 use crossterm::event::KeyModifiers;
@@ -114,6 +114,21 @@ impl Transaction {
         }
     }
 
+    pub fn mutate_field(&mut self, column: &Column, input: &str) {
+        match column.name() {
+            "Date" => {}
+            "Amount" => match f64::from_str(input) {
+                Ok(num) => self.amount = num,
+                Err(_) => {}
+            },
+            "Details" => self.details = input.to_string(),
+            "Category" => self.category = input.to_string(),
+            "Method" => self.method = input.to_string(),
+            "Currency" => self.currency = input.to_string(),
+            &_ => {} //warn("column not recognized")
+        }
+    }
+
     pub fn generate_row_text(&self) -> [String; 6] {
         [
             self.date
@@ -170,7 +185,7 @@ struct App {
     character_index: usize,
     columns: Vec<Column>,
     items: Vec<Transaction>,
-    editing_text: String,
+    input: String,
 }
 
 impl App {
@@ -192,7 +207,7 @@ impl App {
             sort_state: (0, SortOrder::Descending),
             input_mode: InputMode::View,
             character_index: 1,
-            editing_text: "".to_string(),
+            input: "".to_string(),
             columns,
             items,
         }
@@ -203,8 +218,8 @@ impl App {
             if let Some(selected_item) = self.items.get(row) {
                 let item_row = selected_item.generate_row_text();
                 if let Some(editing_text) = item_row.get(column) {
-                    self.editing_text = editing_text.clone();
-                    self.character_index = self.editing_text.chars().count();
+                    self.input = editing_text.clone();
+                    self.character_index = self.input.chars().count();
                 }
             }
         }
@@ -321,7 +336,7 @@ impl App {
     }
 
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
-        new_cursor_pos.clamp(0, self.editing_text.chars().count())
+        new_cursor_pos.clamp(0, self.input.chars().count())
     }
 
     fn move_cursor_right(&mut self) {
@@ -330,7 +345,7 @@ impl App {
     }
 
     fn move_cursor_to_end(&mut self) {
-        let cursor_moved_to_end = self.editing_text.len();
+        let cursor_moved_to_end = self.input.len();
         self.character_index = self.clamp_cursor(cursor_moved_to_end);
     }
 
@@ -344,8 +359,17 @@ impl App {
         self.character_index = self.clamp_cursor(cursor_moved_home);
     }
 
+    fn editing_text_byte_index(&self) -> usize {
+        self.input
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(self.character_index)
+            .unwrap_or(self.input.len())
+    }
+
     fn enter_char(&mut self, ch: char) {
-        self.editing_text.push(ch);
+        let index = self.editing_text_byte_index();
+        self.input.insert(index, ch);
         self.move_cursor_right();
     }
 
@@ -355,10 +379,10 @@ impl App {
             let current_index = self.character_index;
             let from_left_to_current_index = current_index - 1;
 
-            let before_char_to_delete = self.editing_text.chars().take(from_left_to_current_index);
-            let after_char_to_delete = self.editing_text.chars().skip(current_index);
+            let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
+            let after_char_to_delete = self.input.chars().skip(current_index);
 
-            self.editing_text = before_char_to_delete.chain(after_char_to_delete).collect();
+            self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
     }
@@ -371,7 +395,15 @@ impl App {
         }
     }
 
-    fn commit_input(&mut self) {}
+    fn commit_input(&mut self) {
+        if let Some((row, column_index)) = self.table_state.selected_cell() {
+            if let Some(item) = self.items.get_mut(row) {
+                if let Some(column) = self.columns.get(column_index) {
+                    item.mutate_field(column, &self.input);
+                }
+            }
+        }
+    }
 
     fn handle_edit_events(&mut self) -> Result<()> {
         if let Event::Key(key) = event::read()? {
@@ -380,6 +412,7 @@ impl App {
                     KeyCode::Esc => self.input_mode = InputMode::View,
                     KeyCode::Enter => {
                         self.commit_input();
+                        self.next_row();
                         self.input_mode = InputMode::View;
                     }
                     KeyCode::Down => self.next_row(),
@@ -511,7 +544,7 @@ impl App {
     }
 
     fn render_edit_bar(&self, frame: &mut Frame, area: Rect) {
-        let edit_text = Text::from(self.editing_text.clone());
+        let edit_text = Text::from(self.input.clone());
         let edit_bar = Paragraph::new(edit_text)
             .style(
                 Style::new()
