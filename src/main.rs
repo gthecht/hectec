@@ -114,20 +114,26 @@ impl Transaction {
         }
     }
 
+    pub fn generate_row_text(&self) -> [String; 6] {
+        [
+            self.date
+                .format(&format_description::parse("[year]-[month]-[day]").unwrap())
+                .unwrap(),
+            format!("{}", self.amount),
+            self.details.clone(),
+            self.category.clone(),
+            self.method.clone(),
+            self.currency.clone(),
+        ]
+    }
+
     pub fn generate_row(&self) -> Row {
-        Row::new(vec![
-            Cell::from(Text::from(format!(
-                "\n{}\n",
-                self.date
-                    .format(&format_description::parse("[year]-[month]-[day]").unwrap())
-                    .unwrap()
-            ))),
-            Cell::from(Text::from(format!("\n{}\n", self.amount))),
-            Cell::from(Text::from(format!("\n{}\n", self.details))),
-            Cell::from(Text::from(format!("\n{}\n", self.category))),
-            Cell::from(Text::from(format!("\n{}\n", self.method))),
-            Cell::from(Text::from(format!("\n{}\n", self.currency))),
-        ])
+        let cells: Vec<Cell> = self
+            .generate_row_text()
+            .iter()
+            .map(|text| Cell::from(Text::from(format!("\n{}\n", text))))
+            .collect();
+        Row::new(cells)
     }
 }
 
@@ -161,13 +167,14 @@ struct App {
     scroll_state: ScrollbarState,
     sort_state: (usize, SortOrder),
     input_mode: InputMode,
-    cursor_position: Position,
+    character_index: usize,
     columns: Vec<Column>,
     items: Vec<Transaction>,
+    editing_text: String,
 }
 
 impl App {
-    fn new(items: Vec<Transaction>) -> Self {
+    fn new(mut items: Vec<Transaction>) -> Self {
         let columns: Vec<Column> = vec![
             Column::new("Date", 11),
             Column::new("Amount", 10),
@@ -176,36 +183,37 @@ impl App {
             Column::new("Method", 11),
             Column::new("Currency", 9),
         ];
+        items.sort_by(|a, b| Transaction::sort(b, a, &columns[0]));
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
             table_state: TableState::default().with_selected(0),
             scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
-            sort_state: (0, SortOrder::Ascending),
+            sort_state: (0, SortOrder::Descending),
             input_mode: InputMode::View,
-            cursor_position: Position::new(0, 0),
+            character_index: 1,
+            editing_text: "".to_string(),
             columns,
             items,
         }
     }
 
-    fn update_cursor_position(&mut self) {
+    fn update_editing_text(&mut self) {
         if let Some((row, column)) = self.table_state.selected_cell() {
-            let y: u16 = 3 * (row as u16 + 1) - 1;
-            let x: u16 = self
-                .columns
-                .iter()
-                .take(column)
-                .map(|col| col.width + 1)
-                .sum();
-            self.cursor_position = Position::new(x + 3, y);
+            if let Some(selected_item) = self.items.get(row) {
+                let item_row = selected_item.generate_row_text();
+                if let Some(editing_text) = item_row.get(column) {
+                    self.editing_text = editing_text.clone();
+                    self.character_index = self.editing_text.chars().count();
+                }
+            }
         }
     }
 
     fn update_selected(&mut self, i: usize) {
         self.table_state.select(Some(i));
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
-        self.update_cursor_position();
+        self.update_editing_text();
     }
 
     pub fn next_row(&mut self) {
@@ -248,12 +256,12 @@ impl App {
 
     pub fn next_column(&mut self) {
         self.table_state.select_next_column();
-        self.update_cursor_position();
+        self.update_editing_text();
     }
 
     pub fn previous_column(&mut self) {
         self.table_state.select_previous_column();
-        self.update_cursor_position();
+        self.update_editing_text();
     }
 
     pub fn next_color(&mut self) {
@@ -274,7 +282,7 @@ impl App {
             if self.sort_state.0 == column_index {
                 self.sort_state.1 = !self.sort_state.1;
             } else {
-                self.sort_state.1 = SortOrder::Ascending;
+                self.sort_state.1 = SortOrder::Descending;
             }
             self.sort_state.0 = column_index;
             match self.columns.get(column_index) {
@@ -312,43 +320,79 @@ impl App {
         Ok(())
     }
 
+    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
+        new_cursor_pos.clamp(0, self.editing_text.chars().count())
+    }
+
+    fn move_cursor_right(&mut self) {
+        let cursor_moved_right = self.character_index.saturating_add(1);
+        self.character_index = self.clamp_cursor(cursor_moved_right);
+    }
+
+    fn move_cursor_to_end(&mut self) {
+        let cursor_moved_to_end = self.editing_text.len();
+        self.character_index = self.clamp_cursor(cursor_moved_to_end);
+    }
+
+    fn move_cursor_left(&mut self) {
+        let cursor_moved_left = self.character_index.saturating_sub(1);
+        self.character_index = self.clamp_cursor(cursor_moved_left);
+    }
+
+    fn move_cursor_home(&mut self) {
+        let cursor_moved_home = 0;
+        self.character_index = self.clamp_cursor(cursor_moved_home);
+    }
+
+    fn enter_char(&mut self, ch: char) {
+        self.editing_text.push(ch);
+        self.move_cursor_right();
+    }
+
+    fn delete_char(&mut self) {
+        let is_not_cursor_leftmost = self.character_index != 0;
+        if is_not_cursor_leftmost {
+            let current_index = self.character_index;
+            let from_left_to_current_index = current_index - 1;
+
+            let before_char_to_delete = self.editing_text.chars().take(from_left_to_current_index);
+            let after_char_to_delete = self.editing_text.chars().skip(current_index);
+
+            self.editing_text = before_char_to_delete.chain(after_char_to_delete).collect();
+            self.move_cursor_left();
+        }
+    }
+
+    fn delete_char_forward(&mut self) {
+        let current_character_index = self.character_index;
+        self.move_cursor_right();
+        if self.character_index > current_character_index {
+            self.delete_char();
+        }
+    }
+
+    fn commit_input(&mut self) {}
+
     fn handle_edit_events(&mut self) -> Result<()> {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
                 match key.code {
                     KeyCode::Esc => self.input_mode = InputMode::View,
+                    KeyCode::Enter => {
+                        self.commit_input();
+                        self.input_mode = InputMode::View;
+                    }
                     KeyCode::Down => self.next_row(),
                     KeyCode::Up => self.previous_row(),
                     KeyCode::Tab => self.next_column(),
                     KeyCode::BackTab => self.previous_column(),
-                    // KeyCode::Char(char_to_insert) => {
-                    //     self.enter_char(char_to_insert);
-                    //     InputMode::Editing
-                    // }
-                    // KeyCode::Backspace => {
-                    //     self.delete_char();
-                    //     InputMode::Editing
-                    // }
-                    // KeyCode::Delete => {
-                    //     self.delete_char_forward();
-                    //     InputMode::Editing
-                    // }
-                    // KeyCode::Left => {
-                    //     self.move_cursor_left();
-                    //     InputMode::Editing
-                    // }
-                    // KeyCode::Right => {
-                    //     self.move_cursor_right();
-                    //     InputMode::Editing
-                    // }
-                    // KeyCode::End => {
-                    //     self.move_cursor_to_end();
-                    //     InputMode::Editing
-                    // }
-                    // KeyCode::Home => {
-                    //     self.move_cursor_home();
-                    //     InputMode::Editing
-                    // }
+                    KeyCode::Char(char_to_insert) => self.enter_char(char_to_insert),
+                    KeyCode::Backspace => self.delete_char(),
+                    KeyCode::Delete => self.delete_char_forward(),
+                    KeyCode::Left => self.move_cursor_left(),
+                    KeyCode::Right => self.move_cursor_right(),
+                    KeyCode::End => self.move_cursor_to_end(),
+                    KeyCode::Home => self.move_cursor_home(),
                     _ => {}
                 }
             }
@@ -375,16 +419,23 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(4)]);
+        let vertical = &Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Min(5),
+            Constraint::Length(4),
+        ]);
         let rects = vertical.split(frame.area());
 
         self.set_colors();
 
-        self.render_table(frame, rects[0]);
-        self.render_scrollbar(frame, rects[0]);
-        self.render_footer(frame, rects[1]);
+        self.render_edit_bar(frame, rects[0]);
+        self.render_table(frame, rects[1]);
+        self.render_scrollbar(frame, rects[1]);
+        self.render_footer(frame, rects[2]);
         match self.input_mode {
-            InputMode::Edit => frame.set_cursor_position(self.cursor_position),
+            InputMode::Edit => {
+                frame.set_cursor_position(Position::new(self.character_index as u16 + 1, 1))
+            }
             _ => {}
         }
     }
@@ -457,5 +508,21 @@ impl App {
                     .border_style(Style::new().fg(self.colors.footer_border_color)),
             );
         frame.render_widget(info_footer, area);
+    }
+
+    fn render_edit_bar(&self, frame: &mut Frame, area: Rect) {
+        let edit_text = Text::from(self.editing_text.clone());
+        let edit_bar = Paragraph::new(edit_text)
+            .style(
+                Style::new()
+                    .fg(self.colors.row_fg)
+                    .bg(self.colors.buffer_bg),
+            )
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Double)
+                    .border_style(Style::new().fg(self.colors.footer_border_color)),
+            );
+        frame.render_widget(edit_bar, area);
     }
 }
