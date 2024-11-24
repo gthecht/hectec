@@ -6,7 +6,7 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Position, Rect},
     style::{self, Color, Modifier, Style, Stylize},
-    text::Text,
+    text::{Line, Span, Text},
     widgets::{
         Block, BorderType, Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation,
         ScrollbarState, Table, TableState,
@@ -15,17 +15,17 @@ use ratatui::{
 };
 use serde::{Deserialize, Serialize};
 use style::palette::tailwind;
-use time::{format_description, macros::format_description, Date, OffsetDateTime};
+use time::{format_description, macros::format_description, OffsetDateTime};
 
 const PALETTES: [tailwind::Palette; 4] = [
     tailwind::BLUE,
     tailwind::EMERALD,
-    tailwind::INDIGO,
     tailwind::RED,
+    tailwind::INDIGO,
 ];
 const INFO_TEXT: [&str; 2] = [
-    "(q) quit | (↑) move up | (↓) move down | (←) move left | (→) move right | HOME go to first | END go to last",
-    "(s) sort by selected column | (Shift + →) next color | (Shift + ←) previous color",
+    "(ESC) quit | (↑) move up | (↓ | ENTER) move down | (SHIFT+TAB) move left | (TAB) move right | PgUp go to first | PgDn go to last",
+    "(CTRL+S) sort by selected column | (CTRL+C) change color",
 ];
 
 const ITEM_HEIGHT: usize = 4;
@@ -125,21 +125,21 @@ impl Transaction {
         )?)
     }
 
-    pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), String> {
+    pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), &str> {
         match column.name() {
             "Date" => match self.try_parse_date(input) {
                 Ok(date) => self.date = date,
-                Err(_) => return Err(format!("failed to parse {} as date", input)),
+                Err(_) => return Err(" failed to parse as date"),
             },
             "Amount" => match f64::from_str(input) {
                 Ok(num) => self.amount = num,
-                Err(_) => return Err(format!("failed to parse {} as number", input)),
+                Err(_) => return Err(" failed to parse as number"),
             },
             "Details" => self.details = input.to_string(),
             "Category" => self.category = input.to_string(),
             "Method" => self.method = input.to_string(),
             "Currency" => self.currency = input.to_string(),
-            &_ => todo!(), //warn("column not recognized")
+            &_ => return Err(" column not recognized"),
         }
         Ok(())
     }
@@ -185,7 +185,6 @@ impl std::ops::Not for SortOrder {
 }
 
 enum InputMode {
-    View,
     Edit,
     Quit,
 }
@@ -201,6 +200,7 @@ struct App {
     columns: Vec<Column>,
     items: Vec<Transaction>,
     input: String,
+    error_msg: String,
 }
 
 impl App {
@@ -213,16 +213,17 @@ impl App {
             Column::new("Method", 11),
             Column::new("Currency", 9),
         ];
-        items.sort_by(|a, b| Transaction::sort(b, a, &columns[0]));
+        items.sort_by(|a, b| Transaction::sort(a, b, &columns[0]));
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
-            table_state: TableState::default().with_selected(0),
+            table_state: TableState::default().with_selected(items.len() - 1),
             scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
-            sort_state: (0, SortOrder::Descending),
-            input_mode: InputMode::View,
+            sort_state: (0, SortOrder::Ascending),
+            input_mode: InputMode::Edit,
             character_index: 1,
             input: "".to_string(),
+            error_msg: "".to_string(),
             columns,
             items,
         }
@@ -234,6 +235,7 @@ impl App {
                 let item_row = selected_item.generate_row_text();
                 if let Some(editing_text) = item_row.get(column) {
                     self.input = editing_text.clone();
+                    self.error_msg = "".to_string();
                     self.character_index = self.input.chars().count();
                 }
             }
@@ -250,7 +252,7 @@ impl App {
         let i = match self.table_state.selected() {
             Some(i) => {
                 if i >= self.items.len() - 1 {
-                    0
+                    self.items.len() - 1
                 } else {
                     i + 1
                 }
@@ -264,7 +266,7 @@ impl App {
         let i = match self.table_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.items.len() - 1
+                    0
                 } else {
                     i - 1
                 }
@@ -284,8 +286,17 @@ impl App {
         self.update_selected(i);
     }
 
+    fn select_first_column(&mut self) {
+        self.table_state.select_column(Some(0));
+    }
+
     pub fn next_column(&mut self) {
-        self.table_state.select_next_column();
+        if self.table_state.selected_column() == Some(self.columns.len() - 1) {
+            self.select_first_column();
+            self.next_row();
+        } else {
+            self.table_state.select_next_column();
+        }
         self.update_editing_text();
     }
 
@@ -298,11 +309,6 @@ impl App {
         self.color_index = (self.color_index + 1) % PALETTES.len();
     }
 
-    pub fn previous_color(&mut self) {
-        let count = PALETTES.len();
-        self.color_index = (self.color_index + count - 1) % count;
-    }
-
     pub fn set_colors(&mut self) {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
     }
@@ -312,7 +318,7 @@ impl App {
             if self.sort_state.0 == column_index {
                 self.sort_state.1 = !self.sort_state.1;
             } else {
-                self.sort_state.1 = SortOrder::Descending;
+                self.sort_state.1 = SortOrder::Ascending;
             }
             self.sort_state.0 = column_index;
             match self.columns.get(column_index) {
@@ -323,31 +329,6 @@ impl App {
                 None => {}
             }
         }
-    }
-
-    fn handle_view_events(&mut self) -> Result<()> {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => self.input_mode = InputMode::Quit,
-                    KeyCode::Char('j') | KeyCode::Down => self.next_row(),
-                    KeyCode::Char('k') | KeyCode::Up => self.previous_row(),
-                    KeyCode::Char('l') | KeyCode::Right if shift_pressed => self.next_color(),
-                    KeyCode::Char('h') | KeyCode::Left if shift_pressed => {
-                        self.previous_color();
-                    }
-                    KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => self.next_column(),
-                    KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => self.previous_column(),
-                    KeyCode::Home => self.first_row(),
-                    KeyCode::End => self.last_row(),
-                    KeyCode::Char('s') => self.sort_by_column(),
-                    KeyCode::Char('e') | KeyCode::Enter => self.input_mode = InputMode::Edit,
-                    _ => {}
-                }
-            }
-        }
-        Ok(())
     }
 
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
@@ -410,7 +391,7 @@ impl App {
         }
     }
 
-    fn commit_input(&mut self) -> Result<(), String> {
+    fn commit_input(&mut self) -> Result<(), &str> {
         if let Some((row, column_index)) = self.table_state.selected_cell() {
             if let Some(item) = self.items.get_mut(row) {
                 if let Some(column) = self.columns.get(column_index) {
@@ -424,26 +405,38 @@ impl App {
     fn handle_edit_events(&mut self) -> Result<()> {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
+                let ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
                 match key.code {
-                    KeyCode::Esc => self.input_mode = InputMode::View,
-                    KeyCode::Enter => {
-                        match self.commit_input() {
-                            Ok(()) => self.next_row(),
-                            Err(error) => self.input = error,
+                    KeyCode::Esc => self.input_mode = InputMode::Quit,
+                    KeyCode::Enter => match self.commit_input() {
+                        Ok(()) => {
+                            self.select_first_column();
+                            self.next_row();
                         }
-                        self.input_mode = InputMode::View;
-                    }
+                        Err(error) => self.error_msg = error.to_string(),
+                    },
+                    KeyCode::Tab => match self.commit_input() {
+                        Ok(()) => self.next_column(),
+                        Err(error) => self.error_msg = error.to_string(),
+                    },
+                    KeyCode::BackTab => match self.commit_input() {
+                        Ok(()) => self.previous_column(),
+                        Err(error) => self.error_msg = error.to_string(),
+                    },
                     KeyCode::Down => self.next_row(),
                     KeyCode::Up => self.previous_row(),
-                    KeyCode::Tab => self.next_column(),
-                    KeyCode::BackTab => self.previous_column(),
-                    KeyCode::Char(char_to_insert) => self.enter_char(char_to_insert),
+                    KeyCode::PageUp => self.first_row(),
+                    KeyCode::PageDown => self.last_row(),
+
+                    KeyCode::Char('c') if ctrl_pressed => self.next_color(),
+                    KeyCode::Char('s') if ctrl_pressed => self.sort_by_column(),
                     KeyCode::Backspace => self.delete_char(),
                     KeyCode::Delete => self.delete_char_forward(),
                     KeyCode::Left => self.move_cursor_left(),
                     KeyCode::Right => self.move_cursor_right(),
                     KeyCode::End => self.move_cursor_to_end(),
                     KeyCode::Home => self.move_cursor_home(),
+                    KeyCode::Char(char_to_insert) => self.enter_char(char_to_insert),
                     _ => {}
                 }
             }
@@ -457,10 +450,6 @@ impl App {
 
             match self.input_mode {
                 InputMode::Quit => return Ok(()),
-                InputMode::View => {
-                    self.handle_view_events()
-                        .expect("could not handle event correctly");
-                }
                 InputMode::Edit => {
                     self.handle_edit_events()
                         .expect("could not handle event correctly");
@@ -562,7 +551,10 @@ impl App {
     }
 
     fn render_edit_bar(&self, frame: &mut Frame, area: Rect) {
-        let edit_text = Text::from(self.input.clone());
+        let edit_text = Line::from(vec![
+            Span::from(&self.input),
+            Span::from(&self.error_msg).fg(tailwind::ROSE.c600),
+        ]);
         let edit_bar = Paragraph::new(edit_text)
             .style(
                 Style::new()
