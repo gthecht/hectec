@@ -209,13 +209,13 @@ struct App {
     input_mode: InputMode,
     character_index: usize,
     columns: Vec<Column>,
-    items: Vec<Transaction>,
+    transactions: Vec<Transaction>,
     input: String,
     error_msg: String,
 }
 
 impl App {
-    fn new(mut items: Vec<Transaction>) -> Self {
+    fn new(mut transactions: Vec<Transaction>) -> Self {
         let columns: Vec<Column> = vec![
             Column::new("Date", 11),
             Column::new("Amount", 10),
@@ -224,27 +224,27 @@ impl App {
             Column::new("Method", 11),
             Column::new("Currency", 9),
         ];
-        items.sort_by(|a, b| Transaction::sort(a, b, &columns[0]));
+        transactions.sort_by(|a, b| Transaction::sort(a, b, &columns[0]));
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
-            table_state: TableState::default().with_selected(items.len() - 1),
-            scroll_state: ScrollbarState::new((items.len() - 1) * ITEM_HEIGHT),
+            table_state: TableState::default().with_selected(transactions.len() - 1),
+            scroll_state: ScrollbarState::new((transactions.len() - 1) * ITEM_HEIGHT),
             sort_state: (0, SortOrder::Ascending),
             input_mode: InputMode::Edit,
             character_index: 1,
             input: "".to_string(),
             error_msg: "".to_string(),
             columns,
-            items,
+            transactions,
         }
     }
 
     fn update_editing_text(&mut self) {
         if let Some((row, column)) = self.table_state.selected_cell() {
-            if let Some(selected_item) = self.items.get(row) {
-                let item_row = selected_item.generate_row_text();
-                if let Some(editing_text) = item_row.get(column) {
+            if let Some(selected_transaction) = self.transactions.get(row) {
+                let transaction_row = selected_transaction.generate_row_text();
+                if let Some(editing_text) = transaction_row.get(column) {
                     self.input = editing_text.clone();
                     self.error_msg = "".to_string();
                     self.character_index = self.input.chars().count();
@@ -260,18 +260,18 @@ impl App {
     }
 
     fn new_transaction(&mut self) {
-        let last_transaction = self.items.last().unwrap();
+        let last_transaction = self.transactions.last().unwrap();
         let new_transaction = Transaction::new(last_transaction.date);
-        self.items.push(new_transaction);
-        self.update_selected(self.items.len() - 1);
+        self.transactions.push(new_transaction);
+        self.update_selected(self.transactions.len() - 1);
     }
 
     fn delete_transaction(&mut self) {
         match self.table_state.selected() {
             Some(i) => {
-                if i > self.items.len() - 1 {
+                if i > self.transactions.len() - 1 {
                 } else {
-                    self.items.remove(i);
+                    self.transactions.remove(i);
                 }
             }
             None => {}
@@ -281,8 +281,8 @@ impl App {
     pub fn next_row(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
-                if i >= self.items.len() - 1 {
-                    self.items.len() - 1
+                if i >= self.transactions.len() - 1 {
+                    self.transactions.len() - 1
                 } else {
                     i + 1
                 }
@@ -312,7 +312,7 @@ impl App {
     }
 
     pub fn last_row(&mut self) {
-        let i = self.items.len() - 1;
+        let i = self.transactions.len() - 1;
         self.update_selected(i);
     }
 
@@ -353,7 +353,7 @@ impl App {
             self.sort_state.0 = column_index;
             match self.columns.get(column_index) {
                 Some(selected_column) => {
-                    self.items.sort_by(|a, b| match self.sort_state.1 {
+                    self.transactions.sort_by(|a, b| match self.sort_state.1 {
                         SortOrder::Ascending => Transaction::sort(a, b, selected_column),
                         SortOrder::Descending => Transaction::sort(b, a, selected_column),
                     });
@@ -426,9 +426,9 @@ impl App {
 
     fn commit_input(&mut self) -> Result<(), &str> {
         if let Some((row, column_index)) = self.table_state.selected_cell() {
-            if let Some(item) = self.items.get_mut(row) {
+            if let Some(transaction) = self.transactions.get_mut(row) {
                 if let Some(column) = self.columns.get(column_index) {
-                    item.mutate_field(column, &self.input)?
+                    transaction.mutate_field(column, &self.input)?
                 }
             }
         }
@@ -535,15 +535,19 @@ impl App {
             .collect::<Row>()
             .style(header_style)
             .height(1);
-        let rows = self.items.iter().enumerate().map(|(i, item)| {
-            let color = match i % 2 {
-                0 => self.colors.normal_row_color,
-                _ => self.colors.alt_row_color,
-            };
-            let row = item.generate_row();
-            row.style(Style::new().fg(self.colors.row_fg).bg(color))
-                .height(3)
-        });
+        let rows = self
+            .transactions
+            .iter()
+            .enumerate()
+            .map(|(i, transaction)| {
+                let color = match i % 2 {
+                    0 => self.colors.normal_row_color,
+                    _ => self.colors.alt_row_color,
+                };
+                let row = transaction.generate_row();
+                row.style(Style::new().fg(self.colors.row_fg).bg(color))
+                    .height(3)
+            });
         let bar = " █ ";
         let t = Table::new(rows, self.columns.iter().map(|col| col.width))
             .header(header)
