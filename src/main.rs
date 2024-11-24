@@ -34,9 +34,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     let terminal = ratatui::init();
     let file_path = "transactions.json";
-    let file_string = fs::read_to_string(file_path)?;
-    let transactions: Vec<Transaction> = serde_json::from_str(&file_string)?;
-    let app_result = App::new(transactions).run(terminal);
+    let app_result = App::new(file_path.to_string()).run(terminal);
     ratatui::restore();
     app_result
 }
@@ -210,12 +208,13 @@ struct App {
     character_index: usize,
     columns: Vec<Column>,
     transactions: Vec<Transaction>,
+    file_path: String,
     input: String,
     error_msg: String,
 }
 
 impl App {
-    fn new(mut transactions: Vec<Transaction>) -> Self {
+    fn new(file_path: String) -> Self {
         let columns: Vec<Column> = vec![
             Column::new("Date", 11),
             Column::new("Amount", 10),
@@ -224,19 +223,19 @@ impl App {
             Column::new("Method", 11),
             Column::new("Currency", 9),
         ];
-        transactions.sort_by(|a, b| Transaction::sort(a, b, &columns[0]));
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
-            table_state: TableState::default().with_selected(transactions.len() - 1),
-            scroll_state: ScrollbarState::new((transactions.len() - 1) * ITEM_HEIGHT),
+            table_state: TableState::default().with_selected(0),
+            scroll_state: ScrollbarState::new(0),
             sort_state: (0, SortOrder::Ascending),
             input_mode: InputMode::Edit,
             character_index: 1,
             input: "".to_string(),
             error_msg: "".to_string(),
+            transactions: Vec::new(),
+            file_path,
             columns,
-            transactions,
         }
     }
 
@@ -278,7 +277,7 @@ impl App {
         }
     }
 
-    pub fn next_row(&mut self) {
+    fn next_row(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
                 if i >= self.transactions.len() - 1 {
@@ -292,7 +291,7 @@ impl App {
         self.update_selected(i);
     }
 
-    pub fn previous_row(&mut self) {
+    fn previous_row(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -306,12 +305,12 @@ impl App {
         self.update_selected(i);
     }
 
-    pub fn first_row(&mut self) {
+    fn first_row(&mut self) {
         let i = 0;
         self.update_selected(i);
     }
 
-    pub fn last_row(&mut self) {
+    fn last_row(&mut self) {
         let i = self.transactions.len() - 1;
         self.update_selected(i);
     }
@@ -320,7 +319,7 @@ impl App {
         self.table_state.select_column(Some(0));
     }
 
-    pub fn next_column(&mut self) {
+    fn next_column(&mut self) {
         if self.table_state.selected_column() == Some(self.columns.len() - 1) {
             self.select_first_column();
             self.next_row();
@@ -330,20 +329,20 @@ impl App {
         self.update_editing_text();
     }
 
-    pub fn previous_column(&mut self) {
+    fn previous_column(&mut self) {
         self.table_state.select_previous_column();
         self.update_editing_text();
     }
 
-    pub fn next_color(&mut self) {
+    fn next_color(&mut self) {
         self.color_index = (self.color_index + 1) % PALETTES.len();
     }
 
-    pub fn set_colors(&mut self) {
+    fn set_colors(&mut self) {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
     }
 
-    pub fn sort_by_column(&mut self) {
+    fn sort_by_column(&mut self) {
         if let Some(column_index) = self.table_state.selected_column() {
             if self.sort_state.0 == column_index {
                 self.sort_state.1 = !self.sort_state.1;
@@ -435,6 +434,16 @@ impl App {
         Ok(())
     }
 
+    fn save_transactions(&mut self) -> Result<()> {
+        self.transactions
+            .sort_by(|a, b| Transaction::sort(a, b, &self.columns[0]));
+        fs::write(
+            &self.file_path,
+            serde_json::to_string_pretty(&self.transactions)?,
+        )?;
+        Ok(())
+    }
+
     fn handle_edit_events(&mut self) -> Result<()> {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
@@ -445,7 +454,7 @@ impl App {
                         Ok(()) => {
                             self.select_first_column();
                             self.next_row();
-                            self.new_transaction();
+                            // self.new_transaction();
                         }
                         Err(error) => self.error_msg = error.to_string(),
                     },
@@ -481,11 +490,20 @@ impl App {
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+        let file_string = fs::read_to_string(&self.file_path)?;
+        self.transactions = serde_json::from_str(&file_string)?;
+        self.transactions
+            .sort_by(|a, b| Transaction::sort(a, b, &self.columns[0]));
+        self.last_row();
+        self.next_column();
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
             match self.input_mode {
-                InputMode::Quit => return Ok(()),
+                InputMode::Quit => {
+                    self.save_transactions()?;
+                    return Ok(());
+                }
                 InputMode::Edit => {
                     self.handle_edit_events()
                         .expect("could not handle event correctly");
