@@ -1,7 +1,9 @@
-use std::{cmp::Ordering, fs, str::FromStr};
+use std::fs;
 
+mod transaction;
+use crate::transaction::{Column, Transaction};
 use color_eyre::Result;
-use crossterm::event::KeyModifiers;
+use crossterm::event::{KeyEvent, KeyModifiers};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Position, Rect},
@@ -13,22 +15,7 @@ use ratatui::{
     },
     DefaultTerminal, Frame,
 };
-use serde::{Deserialize, Serialize};
 use style::palette::tailwind;
-use time::{format_description, macros::format_description, OffsetDateTime};
-
-const PALETTES: [tailwind::Palette; 4] = [
-    tailwind::BLUE,
-    tailwind::EMERALD,
-    tailwind::RED,
-    tailwind::INDIGO,
-];
-const INFO_TEXT: [&str; 2] = [
-    "(ESC) quit | (↑) move up | (↓ | ENTER) move down | (SHIFT+TAB) move left | (TAB) move right | PgUp go to first | PgDn go to last",
-    "(CTRL+S) sort by selected column | (CTRL+N) new transaction | (CTRL+D) delete selected | (CTRL+C) change color",
-];
-
-const ITEM_HEIGHT: usize = 4;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -38,6 +25,18 @@ fn main() -> Result<()> {
     ratatui::restore();
     app_result
 }
+
+const PALETTES: [tailwind::Palette; 4] = [
+    tailwind::BLUE,
+    tailwind::EMERALD,
+    tailwind::RED,
+    tailwind::INDIGO,
+];
+
+const INFO_TEXT: [&str; 2] = [
+    "(ESC) quit | (↑) move up | (↓ | ENTER) move down | (SHIFT+TAB) move left | (TAB) move right | PgUp go to first | PgDn go to last",
+    "(CTRL+S) sort by selected column | (CTRL+N) new transaction | (CTRL+D) delete selected | (CTRL+C) change color",
+];
 
 struct TableColors {
     buffer_bg: Color,
@@ -56,123 +55,16 @@ impl TableColors {
     const fn new(color: &tailwind::Palette) -> Self {
         Self {
             buffer_bg: tailwind::SLATE.c950,
-            header_bg: color.c900,
             header_fg: tailwind::SLATE.c200,
             row_fg: tailwind::SLATE.c200,
+            normal_row_color: tailwind::SLATE.c950,
+            alt_row_color: tailwind::SLATE.c900,
+            header_bg: color.c900,
             selected_row_style_fg: color.c400,
             selected_column_style_fg: color.c400,
             selected_cell_style_fg: color.c600,
-            normal_row_color: tailwind::SLATE.c950,
-            alt_row_color: tailwind::SLATE.c900,
             footer_border_color: color.c400,
         }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Transaction {
-    #[serde(with = "time::serde::iso8601")]
-    date: OffsetDateTime,
-    amount: f64,
-    currency: String,
-    details: String,
-    category: String,
-    method: String,
-}
-
-struct Column {
-    name: String,
-    pub width: u16,
-}
-
-impl Column {
-    pub fn new(name: &str, width: u16) -> Self {
-        Self {
-            name: name.to_string(),
-            width,
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-impl Transaction {
-    pub fn new(date: OffsetDateTime) -> Self {
-        Transaction {
-            date,
-            amount: 0.0,
-            currency: "".to_string(),
-            details: "".to_string(),
-            category: "".to_string(),
-            method: "".to_string(),
-        }
-    }
-
-    pub fn sort(a: &Transaction, b: &Transaction, column: &Column) -> Ordering {
-        match column.name() {
-            "Date" => a.date.cmp(&b.date),
-            "Amount" => a.amount.partial_cmp(&b.amount).expect("amount not defined"),
-            "Details" => a.details.cmp(&b.details),
-            "Category" => a.category.cmp(&b.category),
-            "Method" => a.method.cmp(&b.method),
-            "Currency" => a.currency.cmp(&b.currency),
-            &_ => a.date.cmp(&b.date), //warn("column not recognized")
-        }
-    }
-
-    fn try_parse_date(&self, input: &str) -> Result<OffsetDateTime> {
-        let format = format_description!(
-            "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
-                 sign:mandatory]"
-        );
-        Ok(OffsetDateTime::parse(
-            &format!("{} 00:08:00 +02", input),
-            &format,
-        )?)
-    }
-
-    pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), &str> {
-        match column.name() {
-            "Date" => match self.try_parse_date(input) {
-                Ok(date) => self.date = date,
-                Err(_) => return Err(" failed to parse as date"),
-            },
-            "Amount" => match f64::from_str(input) {
-                Ok(num) => self.amount = num,
-                Err(_) => return Err(" failed to parse as number"),
-            },
-            "Details" => self.details = input.to_string(),
-            "Category" => self.category = input.to_string(),
-            "Method" => self.method = input.to_string(),
-            "Currency" => self.currency = input.to_string(),
-            &_ => return Err(" column not recognized"),
-        }
-        Ok(())
-    }
-
-    pub fn generate_row_text(&self) -> [String; 6] {
-        [
-            self.date
-                .format(&format_description::parse("[year]-[month]-[day]").unwrap())
-                .unwrap(),
-            format!("{}", self.amount),
-            self.details.clone(),
-            self.category.clone(),
-            self.method.clone(),
-            self.currency.clone(),
-        ]
-    }
-
-    pub fn generate_row(&self) -> Row {
-        let cells: Vec<Cell> = self
-            .generate_row_text()
-            .iter()
-            .map(|text| Cell::from(Text::from(format!("\n{}\n", text))))
-            .collect();
-        Row::new(cells)
     }
 }
 
@@ -193,18 +85,12 @@ impl std::ops::Not for SortOrder {
     }
 }
 
-enum InputMode {
-    Edit,
-    Quit,
-}
-
 struct App {
     colors: TableColors,
     color_index: usize,
     table_state: TableState,
     scroll_state: ScrollbarState,
     sort_state: (usize, SortOrder),
-    input_mode: InputMode,
     character_index: usize,
     columns: Vec<Column>,
     transactions: Vec<Transaction>,
@@ -229,7 +115,6 @@ impl App {
             table_state: TableState::default().with_selected(0),
             scroll_state: ScrollbarState::new(0),
             sort_state: (0, SortOrder::Ascending),
-            input_mode: InputMode::Edit,
             character_index: 1,
             input: "".to_string(),
             error_msg: "".to_string(),
@@ -254,7 +139,7 @@ impl App {
 
     fn update_selected(&mut self, i: usize) {
         self.table_state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
+        self.scroll_state = self.scroll_state.position(i * 4); // each row is of height 4
         self.update_editing_text();
     }
 
@@ -336,9 +221,6 @@ impl App {
 
     fn next_color(&mut self) {
         self.color_index = (self.color_index + 1) % PALETTES.len();
-    }
-
-    fn set_colors(&mut self) {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
     }
 
@@ -444,49 +326,47 @@ impl App {
         Ok(())
     }
 
-    fn handle_edit_events(&mut self) -> Result<()> {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                let ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
-                match key.code {
-                    KeyCode::Esc => self.input_mode = InputMode::Quit,
-                    KeyCode::Enter => match self.commit_input() {
-                        Ok(()) => {
-                            self.select_first_column();
-                            self.next_row();
-                            // self.new_transaction();
-                        }
-                        Err(error) => self.error_msg = error.to_string(),
-                    },
-                    KeyCode::Tab => match self.commit_input() {
-                        Ok(()) => self.next_column(),
-                        Err(error) => self.error_msg = error.to_string(),
-                    },
-                    KeyCode::BackTab => match self.commit_input() {
-                        Ok(()) => self.previous_column(),
-                        Err(error) => self.error_msg = error.to_string(),
-                    },
-                    KeyCode::Down => self.next_row(),
-                    KeyCode::Up => self.previous_row(),
-                    KeyCode::PageUp => self.first_row(),
-                    KeyCode::PageDown => self.last_row(),
+    fn handle_edit_events(&mut self, key: KeyEvent) -> Option<()> {
+        if key.kind == KeyEventKind::Press {
+            let ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
+            match key.code {
+                KeyCode::Esc => return Some(()),
+                KeyCode::Enter => match self.commit_input() {
+                    Ok(()) => {
+                        self.select_first_column();
+                        self.next_row();
+                        // self.new_transaction();
+                    }
+                    Err(error) => self.error_msg = error.to_string(),
+                },
+                KeyCode::Tab => match self.commit_input() {
+                    Ok(()) => self.next_column(),
+                    Err(error) => self.error_msg = error.to_string(),
+                },
+                KeyCode::BackTab => match self.commit_input() {
+                    Ok(()) => self.previous_column(),
+                    Err(error) => self.error_msg = error.to_string(),
+                },
+                KeyCode::Down => self.next_row(),
+                KeyCode::Up => self.previous_row(),
+                KeyCode::PageUp => self.first_row(),
+                KeyCode::PageDown => self.last_row(),
 
-                    KeyCode::Char('c') if ctrl_pressed => self.next_color(),
-                    KeyCode::Char('s') if ctrl_pressed => self.sort_by_column(),
-                    KeyCode::Char('n') if ctrl_pressed => self.new_transaction(),
-                    KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
-                    KeyCode::Backspace => self.delete_char(),
-                    KeyCode::Delete => self.delete_char_forward(),
-                    KeyCode::Left => self.move_cursor_left(),
-                    KeyCode::Right => self.move_cursor_right(),
-                    KeyCode::End => self.move_cursor_to_end(),
-                    KeyCode::Home => self.move_cursor_home(),
-                    KeyCode::Char(char_to_insert) => self.enter_char(char_to_insert),
-                    _ => {}
-                }
+                KeyCode::Char('c') if ctrl_pressed => self.next_color(),
+                KeyCode::Char('s') if ctrl_pressed => self.sort_by_column(),
+                KeyCode::Char('n') if ctrl_pressed => self.new_transaction(),
+                KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
+                KeyCode::Backspace => self.delete_char(),
+                KeyCode::Delete => self.delete_char_forward(),
+                KeyCode::Left => self.move_cursor_left(),
+                KeyCode::Right => self.move_cursor_right(),
+                KeyCode::End => self.move_cursor_to_end(),
+                KeyCode::Home => self.move_cursor_home(),
+                KeyCode::Char(char_to_insert) => self.enter_char(char_to_insert),
+                _ => {}
             }
         }
-        Ok(())
+        None
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
@@ -498,15 +378,10 @@ impl App {
         self.next_column();
         loop {
             terminal.draw(|frame| self.draw(frame))?;
-
-            match self.input_mode {
-                InputMode::Quit => {
+            if let Event::Key(key) = event::read()? {
+                if let Some(_) = self.handle_edit_events(key) {
                     self.save_transactions()?;
                     return Ok(());
-                }
-                InputMode::Edit => {
-                    self.handle_edit_events()
-                        .expect("could not handle event correctly");
                 }
             }
         }
@@ -520,18 +395,11 @@ impl App {
         ]);
         let rects = vertical.split(frame.area());
 
-        self.set_colors();
-
         self.render_edit_bar(frame, rects[0]);
         self.render_table(frame, rects[1]);
         self.render_scrollbar(frame, rects[1]);
         self.render_footer(frame, rects[2]);
-        match self.input_mode {
-            InputMode::Edit => {
-                frame.set_cursor_position(Position::new(self.character_index as u16 + 1, 1))
-            }
-            _ => {}
-        }
+        frame.set_cursor_position(Position::new(self.character_index as u16 + 1, 1))
     }
 
     fn render_table(&mut self, frame: &mut Frame, area: Rect) {
