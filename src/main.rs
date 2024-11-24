@@ -25,7 +25,7 @@ const PALETTES: [tailwind::Palette; 4] = [
 ];
 const INFO_TEXT: [&str; 2] = [
     "(ESC) quit | (↑) move up | (↓ | ENTER) move down | (SHIFT+TAB) move left | (TAB) move right | PgUp go to first | PgDn go to last",
-    "(CTRL+S) sort by selected column | (CTRL+C) change color",
+    "(CTRL+S) sort by selected column | (CTRL+N) new transaction | (CTRL+D) delete selected | (CTRL+C) change color",
 ];
 
 const ITEM_HEIGHT: usize = 4;
@@ -102,6 +102,17 @@ impl Column {
 }
 
 impl Transaction {
+    pub fn new(date: OffsetDateTime) -> Self {
+        Transaction {
+            date,
+            amount: 0.0,
+            currency: "".to_string(),
+            details: "".to_string(),
+            category: "".to_string(),
+            method: "".to_string(),
+        }
+    }
+
     pub fn sort(a: &Transaction, b: &Transaction, column: &Column) -> Ordering {
         match column.name() {
             "Date" => a.date.cmp(&b.date),
@@ -248,6 +259,25 @@ impl App {
         self.update_editing_text();
     }
 
+    fn new_transaction(&mut self) {
+        let last_transaction = self.items.last().unwrap();
+        let new_transaction = Transaction::new(last_transaction.date);
+        self.items.push(new_transaction);
+        self.update_selected(self.items.len() - 1);
+    }
+
+    fn delete_transaction(&mut self) {
+        match self.table_state.selected() {
+            Some(i) => {
+                if i > self.items.len() - 1 {
+                } else {
+                    self.items.remove(i);
+                }
+            }
+            None => {}
+        }
+    }
+
     pub fn next_row(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
@@ -322,10 +352,13 @@ impl App {
             }
             self.sort_state.0 = column_index;
             match self.columns.get(column_index) {
-                Some(selected_column) => self.items.sort_by(|a, b| match self.sort_state.1 {
-                    SortOrder::Ascending => Transaction::sort(a, b, selected_column),
-                    SortOrder::Descending => Transaction::sort(b, a, selected_column),
-                }),
+                Some(selected_column) => {
+                    self.items.sort_by(|a, b| match self.sort_state.1 {
+                        SortOrder::Ascending => Transaction::sort(a, b, selected_column),
+                        SortOrder::Descending => Transaction::sort(b, a, selected_column),
+                    });
+                    self.update_editing_text();
+                }
                 None => {}
             }
         }
@@ -412,6 +445,7 @@ impl App {
                         Ok(()) => {
                             self.select_first_column();
                             self.next_row();
+                            self.new_transaction();
                         }
                         Err(error) => self.error_msg = error.to_string(),
                     },
@@ -430,6 +464,8 @@ impl App {
 
                     KeyCode::Char('c') if ctrl_pressed => self.next_color(),
                     KeyCode::Char('s') if ctrl_pressed => self.sort_by_column(),
+                    KeyCode::Char('n') if ctrl_pressed => self.new_transaction(),
+                    KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
                     KeyCode::Backspace => self.delete_char(),
                     KeyCode::Delete => self.delete_char_forward(),
                     KeyCode::Left => self.move_cursor_left(),
