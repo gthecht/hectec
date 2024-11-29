@@ -85,6 +85,11 @@ impl std::ops::Not for SortOrder {
     }
 }
 
+enum ShouldAddNewRow {
+    Yes,
+    No,
+}
+
 struct App {
     colors: TableColors,
     color_index: usize,
@@ -162,10 +167,14 @@ impl App {
         }
     }
 
-    fn next_row(&mut self) {
+    fn next_row(&mut self, add_new_row_if_end: ShouldAddNewRow) {
         let i = match self.table_state.selected() {
             Some(i) => {
                 if i >= self.transactions.len() - 1 {
+                    match add_new_row_if_end {
+                        ShouldAddNewRow::Yes => self.new_transaction(),
+                        ShouldAddNewRow::No => {}
+                    }
                     self.transactions.len() - 1
                 } else {
                     i + 1
@@ -207,7 +216,7 @@ impl App {
     fn next_column(&mut self) {
         if self.table_state.selected_column() == Some(self.columns.len() - 1) {
             self.select_first_column();
-            self.next_row();
+            self.next_row(ShouldAddNewRow::No);
         } else {
             self.table_state.select_next_column();
         }
@@ -334,7 +343,7 @@ impl App {
                 KeyCode::Enter => match self.commit_input() {
                     Ok(()) => {
                         self.select_first_column();
-                        self.next_row();
+                        self.next_row(ShouldAddNewRow::Yes);
                         // self.new_transaction();
                     }
                     Err(error) => self.error_msg = error.to_string(),
@@ -347,7 +356,7 @@ impl App {
                     Ok(()) => self.previous_column(),
                     Err(error) => self.error_msg = error.to_string(),
                 },
-                KeyCode::Down => self.next_row(),
+                KeyCode::Down => self.next_row(ShouldAddNewRow::No),
                 KeyCode::Up => self.previous_row(),
                 KeyCode::PageUp => self.first_row(),
                 KeyCode::PageDown => self.last_row(),
