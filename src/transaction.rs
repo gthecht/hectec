@@ -16,34 +16,41 @@ pub struct SimpleDate {
     date: Date,
 }
 
-impl SimpleDate {
-    pub fn from_string(date_string: &str) -> Result<SimpleDate, &str> {
-        let splitter = if date_string.contains("-") { "-" } else { "." };
-        let mut split_str = date_string.split(splitter);
-        if let Some(year) = split_str.next() {
-            if let Ok(year) = i32::from_str(year) {
-                let year = if year < 100 { 2000 + year } else { year };
-                if let Some(month) = split_str.next() {
-                    if let Ok(month) = u8::from_str(month) {
-                        if let Ok(m) = Month::try_from(month) {
-                            if let Some(day) = split_str.next() {
-                                if let Ok(day) = u8::from_str(day) {
-                                    if let Ok(date) = Date::from_calendar_date(year, m, day) {
-                                        return Ok(SimpleDate {
-                                            year,
-                                            month,
-                                            day,
-                                            date,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Err("failed to create date from string")
+impl TryFrom<&str> for SimpleDate {
+    type Error = String;
+
+    fn try_from(date_string: &str) -> Result<SimpleDate, Self::Error> {
+        let splitter = if date_string.contains('-') { "-" } else { "." };
+        let mut parts = date_string.split(splitter);
+
+        let year: i32 = parts
+            .next()
+            .ok_or_else(|| format!("Missing year in {}", date_string))
+            .and_then(|y| y.parse::<i32>().map_err(|_| format!("Invalid year: {}", y)))
+            .map(|y| if y < 100 { 2000 + y } else { y })?;
+
+        let month: u8 = parts
+            .next()
+            .ok_or_else(|| format!("Missing month in {}", date_string))
+            .and_then(|m| m.parse::<u8>().map_err(|_| format!("Invalid month: {}", m)))?;
+
+        let monthy_month: Month =
+            Month::try_from(month).map_err(|_| format!("Invalid month: {}", month))?;
+
+        let day: u8 = parts
+            .next()
+            .ok_or_else(|| format!("Missing day in {}", date_string))
+            .and_then(|d| d.parse::<u8>().map_err(|_| format!("Invalid day: {}", d)))?;
+
+        let date = Date::from_calendar_date(year, monthy_month, day)
+            .map_err(|_| format!("Invalid date: {}", date_string))?;
+
+        Ok(SimpleDate {
+            year,
+            month,
+            day,
+            date,
+        })
     }
 }
 
@@ -68,7 +75,7 @@ impl<'de> Deserialize<'de> for SimpleDate {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        SimpleDate::from_string(&s).map_err(serde::de::Error::custom)
+        SimpleDate::try_from(s.as_str()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -139,7 +146,7 @@ impl Transaction {
 
     pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), &str> {
         match column.name() {
-            "Date" => match SimpleDate::from_string(input) {
+            "Date" => match SimpleDate::try_from(input) {
                 Ok(date) => self.date = date,
                 Err(_) => return Err(" failed to parse as date"),
             },
