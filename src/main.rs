@@ -158,8 +158,7 @@ impl App {
     fn delete_transaction(&mut self) {
         match self.table_state.selected() {
             Some(i) => {
-                if i > self.transactions.len() - 1 {
-                } else {
+                if i < self.transactions.len() {
                     self.transactions.remove(i);
                 }
             }
@@ -314,7 +313,7 @@ impl App {
         }
     }
 
-    fn commit_input(&mut self) -> Result<(), &str> {
+    fn commit_input(&mut self) -> Result<(), String> {
         if let Some((row, column_index)) = self.table_state.selected_cell() {
             if let Some(transaction) = self.transactions.get_mut(row) {
                 if let Some(column) = self.columns.get(column_index) {

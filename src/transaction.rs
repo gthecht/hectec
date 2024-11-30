@@ -144,21 +144,21 @@ impl Transaction {
         }
     }
 
-    pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), &str> {
+    pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), String> {
         match column.name() {
             "Date" => match SimpleDate::try_from(input) {
                 Ok(date) => self.date = date,
-                Err(_) => return Err(" failed to parse as date"),
+                Err(e) => return Err(format!(" failed to parse as date: {}", e)),
             },
             "Amount" => match f64::from_str(input) {
                 Ok(num) => self.amount = num,
-                Err(_) => return Err(" failed to parse as number"),
+                Err(e) => return Err(format!(" failed to parse as number: {}", e)),
             },
             "Details" => self.details = input.to_string(),
             "Category" => self.category = input.to_string(),
             "Method" => self.method = input.to_string(),
             "Currency" => self.currency = input.to_string(),
-            &_ => return Err(" column not recognized"),
+            &_ => return Err(" column not recognized".to_string()),
         }
         Ok(())
     }
