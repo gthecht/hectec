@@ -48,7 +48,7 @@ struct TableColors {
     selected_cell_style_fg: Color,
     normal_row_color: Color,
     alt_row_color: Color,
-    footer_border_color: Color,
+    border_color: Color,
 }
 
 impl TableColors {
@@ -63,7 +63,7 @@ impl TableColors {
             selected_row_style_fg: color.c400,
             selected_column_style_fg: color.c400,
             selected_cell_style_fg: color.c600,
-            footer_border_color: color.c400,
+            border_color: color.c400,
         }
     }
 }
@@ -344,7 +344,6 @@ impl App {
                     Ok(()) => {
                         self.select_first_column();
                         self.next_row(ShouldAddNewRow::Yes);
-                        // self.new_transaction();
                     }
                     Err(error) => self.error_msg = error.to_string(),
                 },
@@ -398,17 +397,18 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = &Layout::vertical([
-            Constraint::Length(3),
-            Constraint::Min(5),
             Constraint::Length(4),
+            Constraint::Min(5),
+            Constraint::Length(3),
         ]);
         let rects = vertical.split(frame.area());
 
-        self.render_edit_bar(frame, rects[0]);
+        self.render_instructions(frame, rects[0]);
         self.render_table(frame, rects[1]);
         self.render_scrollbar(frame, rects[1]);
-        self.render_footer(frame, rects[2]);
-        frame.set_cursor_position(Position::new(self.character_index as u16 + 1, 1))
+        self.render_edit_bar(frame, rects[2]);
+        let cursor_y = rects[2].as_position().y + 1;
+        frame.set_cursor_position(Position::new(self.character_index as u16 + 1, cursor_y))
     }
 
     fn render_table(&mut self, frame: &mut Frame, area: Rect) {
@@ -469,8 +469,8 @@ impl App {
         );
     }
 
-    fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let info_footer = Paragraph::new(Text::from_iter(INFO_TEXT))
+    fn render_instructions(&self, frame: &mut Frame, area: Rect) {
+        let instructions = Paragraph::new(Text::from_iter(INFO_TEXT))
             .style(
                 Style::new()
                     .fg(self.colors.row_fg)
@@ -480,9 +480,9 @@ impl App {
             .block(
                 Block::bordered()
                     .border_type(BorderType::Double)
-                    .border_style(Style::new().fg(self.colors.footer_border_color)),
+                    .border_style(Style::new().fg(self.colors.border_color)),
             );
-        frame.render_widget(info_footer, area);
+        frame.render_widget(instructions, area);
     }
 
     fn render_edit_bar(&self, frame: &mut Frame, area: Rect) {
@@ -499,7 +499,7 @@ impl App {
             .block(
                 Block::bordered()
                     .border_type(BorderType::Double)
-                    .border_style(Style::new().fg(self.colors.footer_border_color)),
+                    .border_style(Style::new().fg(self.colors.border_color)),
             );
         frame.render_widget(edit_bar, area);
     }
