@@ -91,33 +91,52 @@ impl Ord for SimpleDate {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum TransactionField {
+    Date,
+    Amount,
+    Details,
+    Category,
+    Method,
+    Currency,
+}
+
+impl TransactionField {
+    pub fn get(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Date),
+            1 => Some(Self::Amount),
+            2 => Some(Self::Details),
+            3 => Some(Self::Category),
+            4 => Some(Self::Method),
+            5 => Some(Self::Currency),
+            _ => None,
+        }
+    }
+
+    pub fn widths() -> Vec<u16> {
+        vec![11, 10, 100, 15, 11, 9]
+    }
+
+    pub fn names() -> Vec<String> {
+        vec![
+            "Date", "Amount", "Details", "Category", "Method", "Currency",
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
     pub date: SimpleDate,
     amount: f64,
     currency: String,
-    details: String,
+    pub details: String,
     category: String,
     method: String,
-}
-
-pub struct Column {
-    name: String,
-    pub width: u16,
-}
-
-impl Column {
-    pub fn new(name: &str, width: u16) -> Self {
-        Self {
-            name: name.to_string(),
-            width,
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
 }
 
 impl Transaction {
@@ -132,33 +151,23 @@ impl Transaction {
         }
     }
 
-    pub fn sort(a: &Transaction, b: &Transaction, column: &Column) -> Ordering {
-        match column.name() {
-            "Date" => a.date.cmp(&b.date),
-            "Amount" => a.amount.partial_cmp(&b.amount).expect("amount not defined"),
-            "Details" => a.details.cmp(&b.details),
-            "Category" => a.category.cmp(&b.category),
-            "Method" => a.method.cmp(&b.method),
-            "Currency" => a.currency.cmp(&b.currency),
-            &_ => a.date.cmp(&b.date), //warn("column not recognized")
-        }
-    }
-
-    pub fn mutate_field(&mut self, column: &Column, input: &str) -> Result<(), String> {
-        match column.name() {
-            "Date" => match SimpleDate::try_from(input) {
-                Ok(date) => self.date = date,
-                Err(e) => return Err(format!(" failed to parse as date: {}", e)),
+    pub fn mutate_field(&mut self, column_index: usize, input: &str) -> Result<(), String> {
+        match TransactionField::get(column_index) {
+            Some(field) => match field {
+                TransactionField::Date => match SimpleDate::try_from(input) {
+                    Ok(date) => self.date = date,
+                    Err(e) => return Err(format!(" failed to parse as date: {}", e)),
+                },
+                TransactionField::Amount => match f64::from_str(input) {
+                    Ok(num) => self.amount = num,
+                    Err(e) => return Err(format!(" failed to parse as number: {}", e)),
+                },
+                TransactionField::Details => self.details = input.to_string(),
+                TransactionField::Category => self.category = input.to_string(),
+                TransactionField::Method => self.method = input.to_string(),
+                TransactionField::Currency => self.currency = input.to_string(),
             },
-            "Amount" => match f64::from_str(input) {
-                Ok(num) => self.amount = num,
-                Err(e) => return Err(format!(" failed to parse as number: {}", e)),
-            },
-            "Details" => self.details = input.to_string(),
-            "Category" => self.category = input.to_string(),
-            "Method" => self.method = input.to_string(),
-            "Currency" => self.currency = input.to_string(),
-            &_ => return Err(" column not recognized".to_string()),
+            None => {}
         }
         Ok(())
     }
@@ -181,5 +190,31 @@ impl Transaction {
             .map(|text| Cell::from(Text::from(format!("\n{}\n", text))))
             .collect();
         Row::new(cells)
+    }
+}
+
+impl PartialEq for Transaction {
+    fn eq(&self, other: &Self) -> bool {
+        let date_cmp = self.date == other.date;
+        let amount_cmp = (self.amount - other.amount).abs() < 1e-6;
+        let currency_cmp = self.currency == other.currency;
+        let details_cmp = self.details == other.details;
+        let category_cmp = self.category == other.category;
+        let method_cmp = self.method == other.method;
+        date_cmp && amount_cmp && currency_cmp && details_cmp && category_cmp && method_cmp
+    }
+}
+
+impl Eq for Transaction {}
+
+impl PartialOrd for Transaction {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.date.cmp(&other.date))
+    }
+}
+
+impl Ord for Transaction {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.date.cmp(&other.date)
     }
 }
