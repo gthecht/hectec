@@ -241,10 +241,15 @@ impl App {
             .unwrap_or(self.input.len())
     }
 
+    fn update_recommendation(&self) {
+        todo!()
+    }
+
     fn enter_char(&mut self, ch: char) {
         let index = self.editing_text_byte_index();
         self.input.insert(index, ch);
         self.move_cursor_right();
+        self.update_recommendation();
     }
 
     fn delete_char(&mut self) {
