@@ -1,7 +1,7 @@
 use std::fs;
 
 mod transaction;
-use crate::transaction::{Column, Transaction};
+use crate::transaction::{Transaction, TransactionField};
 use color_eyre::Result;
 use crossterm::event::{KeyEvent, KeyModifiers};
 use ratatui::{
@@ -97,8 +97,9 @@ struct App {
     scroll_state: ScrollbarState,
     sort_state: (usize, SortOrder),
     character_index: usize,
-    columns: Vec<Column>,
     transactions: Vec<Transaction>,
+    recommended_transaction: Option<Transaction>,
+    recommended_input: String,
     file_path: String,
     input: String,
     error_msg: String,
@@ -106,14 +107,6 @@ struct App {
 
 impl App {
     fn new(file_path: String) -> Self {
-        let columns: Vec<Column> = vec![
-            Column::new("Date", 11),
-            Column::new("Amount", 10),
-            Column::new("Details", 100),
-            Column::new("Category", 15),
-            Column::new("Method", 11),
-            Column::new("Currency", 9),
-        ];
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
@@ -124,8 +117,9 @@ impl App {
             input: "".to_string(),
             error_msg: "".to_string(),
             transactions: Vec::new(),
+            recommended_transaction: None,
+            recommended_input: "".to_string(),
             file_path,
-            columns,
         }
     }
 
@@ -149,9 +143,11 @@ impl App {
     }
 
     fn new_transaction(&mut self) {
-        let last_transaction = self.transactions.last().unwrap();
-        let new_transaction = Transaction::new(last_transaction.date);
-        self.transactions.push(new_transaction);
+        let last_transaction_date = self.transactions.last().unwrap().date;
+        self.transactions
+            .push(Transaction::new(last_transaction_date));
+        let mut recommended_transaction = Transaction::new(last_transaction_date);
+        recommended_transaction.details = "this is a recommendation".to_string();
         self.update_selected(self.transactions.len() - 1);
     }
 
@@ -213,7 +209,7 @@ impl App {
     }
 
     fn next_column(&mut self) {
-        if self.table_state.selected_column() == Some(self.columns.len() - 1) {
+        if self.table_state.selected_column() == Some(TransactionField::widths().len() - 1) {
             self.select_first_column();
             self.next_row(ShouldAddNewRow::No);
         } else {
@@ -240,11 +236,11 @@ impl App {
                 self.sort_state.1 = SortOrder::Ascending;
             }
             self.sort_state.0 = column_index;
-            match self.columns.get(column_index) {
-                Some(selected_column) => {
+            match TransactionField::get(column_index) {
+                Some(selected_field) => {
                     self.transactions.sort_by(|a, b| match self.sort_state.1 {
-                        SortOrder::Ascending => Transaction::sort(a, b, selected_column),
-                        SortOrder::Descending => Transaction::sort(b, a, selected_column),
+                        SortOrder::Ascending => Transaction::sort(a, b, selected_field.clone()),
+                        SortOrder::Descending => Transaction::sort(b, a, selected_field.clone()),
                     });
                     self.update_editing_text();
                 }
@@ -316,8 +312,8 @@ impl App {
     fn commit_input(&mut self) -> Result<(), String> {
         if let Some((row, column_index)) = self.table_state.selected_cell() {
             if let Some(transaction) = self.transactions.get_mut(row) {
-                if let Some(column) = self.columns.get(column_index) {
-                    transaction.mutate_field(column, &self.input)?
+                if let Some(field) = TransactionField::get(column_index) {
+                    transaction.mutate_field(field, &self.input)?
                 }
             }
         }
@@ -326,7 +322,7 @@ impl App {
 
     fn save_transactions(&mut self) -> Result<()> {
         self.transactions
-            .sort_by(|a, b| Transaction::sort(a, b, &self.columns[0]));
+            .sort_by(|a, b| Transaction::sort(a, b, TransactionField::Date));
         fs::write(
             &self.file_path,
             serde_json::to_string_pretty(&self.transactions)?,
@@ -380,7 +376,7 @@ impl App {
         let file_string = fs::read_to_string(&self.file_path)?;
         self.transactions = serde_json::from_str(&file_string)?;
         self.transactions
-            .sort_by(|a, b| Transaction::sort(a, b, &self.columns[0]));
+            .sort_by(|a, b| Transaction::sort(a, b, TransactionField::Date));
         self.last_row();
         self.next_column();
         loop {
@@ -422,10 +418,9 @@ impl App {
             .add_modifier(Modifier::REVERSED)
             .fg(self.colors.selected_cell_style_fg);
 
-        let header = self
-            .columns
-            .iter()
-            .map(|col| Cell::from(col.name().to_string()))
+        let header = TransactionField::names()
+            .into_iter()
+            .map(|name| Cell::from(name))
             .collect::<Row>()
             .style(header_style)
             .height(1);
@@ -443,7 +438,7 @@ impl App {
                     .height(3)
             });
         let bar = " █ ";
-        let t = Table::new(rows, self.columns.iter().map(|col| col.width))
+        let t = Table::new(rows, TransactionField::widths())
             .header(header)
             .row_highlight_style(selected_row_style)
             .column_highlight_style(selected_col_style)
@@ -488,6 +483,7 @@ impl App {
         let edit_text = Line::from(vec![
             Span::from(&self.input),
             Span::from(&self.error_msg).fg(tailwind::ROSE.c600),
+            Span::from(&self.recommended_input).fg(tailwind::SLATE.c600),
         ]);
         let edit_bar = Paragraph::new(edit_text)
             .style(
