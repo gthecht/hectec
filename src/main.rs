@@ -1,6 +1,8 @@
 use std::fs;
 
+mod logger;
 mod transaction;
+use crate::logger::initialize_logging;
 use crate::transaction::{Transaction, TransactionField};
 use color_eyre::Result;
 use crossterm::event::{KeyEvent, KeyModifiers};
@@ -16,9 +18,11 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use style::palette::tailwind;
+use tracing::Level;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
+    initialize_logging()?;
     let terminal = ratatui::init();
     let file_path = "transactions.json";
     let app_result = App::new(file_path.to_string()).run(terminal);
@@ -118,7 +122,7 @@ impl App {
                         .map(|transaction| {
                             let recommended_row = transaction.generate_row_text();
                             recommended_row.get(column).map_or("".to_string(), |s| {
-                                print!("\n{}", s);
+                                trace_dbg!(level: Level::INFO, s);
                                 s.clone()
                             })
                         })
