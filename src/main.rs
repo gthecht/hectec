@@ -34,7 +34,7 @@ const PALETTES: [tailwind::Palette; 4] = [
 ];
 
 const INFO_TEXT: [&str; 2] = [
-    "(ESC) quit | (↑) move up | (↓ | ENTER) move down | (SHIFT+TAB) move left | (TAB) move right | PgUp go to first | PgDn go to last",
+    "(ESC) quit | (↑) up | (↓ | ENTER) down | (SHIFT+TAB) left | (TAB) right | PgUp go to first | PgDn go to last",
     "(CTRL+N) new transaction | (CTRL+D) delete selected | (CTRL+C) change color",
 ];
 
@@ -112,6 +112,17 @@ impl App {
                     self.input = editing_text.clone();
                     self.error_msg = "".to_string();
                     self.character_index = self.input.chars().count();
+                    self.recommended_input = self
+                        .recommended_transaction
+                        .as_ref()
+                        .map(|transaction| {
+                            let recommended_row = transaction.generate_row_text();
+                            recommended_row.get(column).map_or("".to_string(), |s| {
+                                print!("\n{}", s);
+                                s.clone()
+                            })
+                        })
+                        .unwrap_or("".to_string());
                 }
             }
         }
@@ -127,8 +138,9 @@ impl App {
         let last_transaction_date = self.transactions.last().unwrap().date;
         self.transactions
             .push(Transaction::new(last_transaction_date));
-        let mut recommended_transaction = Transaction::new(last_transaction_date);
+        let mut recommended_transaction = self.transactions.last().unwrap().clone();
         recommended_transaction.details = "this is a recommendation".to_string();
+        self.recommended_transaction = Some(recommended_transaction);
         self.update_selected(self.transactions.len() - 1);
     }
 
@@ -249,7 +261,7 @@ impl App {
         let index = self.editing_text_byte_index();
         self.input.insert(index, ch);
         self.move_cursor_right();
-        self.update_recommendation();
+        // self.update_recommendation();
     }
 
     fn delete_char(&mut self) {

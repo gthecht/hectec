@@ -128,15 +128,15 @@ impl TransactionField {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
     pub date: SimpleDate,
     amount: f64,
     currency: String,
     pub details: String,
-    category: String,
-    method: String,
+    pub category: String,
+    pub method: String,
 }
 
 impl Transaction {
