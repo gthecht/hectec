@@ -108,6 +108,29 @@ impl App {
         }
     }
 
+    fn update_recommended_input(&mut self) {
+        if let Some((_, column)) = self.table_state.selected_cell() {
+            self.recommended_input = self
+                .recommended_transaction
+                .as_ref()
+                .map(|transaction| {
+                    let recommended_row = transaction.generate_row_text();
+                    recommended_row
+                        .get(column)
+                        .map_or("".to_string(), |recommendation| {
+                            trace_dbg!(level: Level::INFO, recommendation);
+                            let input_len = self.input.len();
+                            if input_len >= recommendation.len() {
+                                "".to_string()
+                            } else {
+                                recommendation[input_len..].to_string()
+                            }
+                        })
+                })
+                .unwrap_or("".to_string());
+        }
+    }
+
     fn update_editing_text(&mut self) {
         if let Some((row, column)) = self.table_state.selected_cell() {
             if let Some(selected_transaction) = self.transactions.get(row) {
@@ -116,17 +139,7 @@ impl App {
                     self.input = editing_text.clone();
                     self.error_msg = "".to_string();
                     self.character_index = self.input.chars().count();
-                    self.recommended_input = self
-                        .recommended_transaction
-                        .as_ref()
-                        .map(|transaction| {
-                            let recommended_row = transaction.generate_row_text();
-                            recommended_row.get(column).map_or("".to_string(), |s| {
-                                trace_dbg!(level: Level::INFO, s);
-                                s.clone()
-                            })
-                        })
-                        .unwrap_or("".to_string());
+                    self.update_recommended_input();
                 }
             }
         }
@@ -257,15 +270,23 @@ impl App {
             .unwrap_or(self.input.len())
     }
 
-    fn update_recommendation(&self) {
-        todo!()
+    fn update_recommendation(&mut self) {
+        if let Some((_, column_index)) = self.table_state.selected_cell() {
+            self.recommended_transaction.as_mut().map(|transaction| {
+                match transaction.mutate_field(column_index, &self.input) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+            });
+        }
+        self.update_recommended_input();
     }
 
     fn enter_char(&mut self, ch: char) {
         let index = self.editing_text_byte_index();
         self.input.insert(index, ch);
         self.move_cursor_right();
-        // self.update_recommendation();
+        self.update_recommendation();
     }
 
     fn delete_char(&mut self) {
