@@ -1,9 +1,7 @@
-use std::fs;
-
 mod logger;
 mod transaction;
 use crate::logger::initialize_logging;
-use crate::transaction::{Transaction, TransactionField};
+use crate::transaction::{TransactionField, TransactionsTable};
 use color_eyre::Result;
 use crossterm::event::{KeyEvent, KeyModifiers};
 use ratatui::{
@@ -18,7 +16,6 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use style::palette::tailwind;
-use tracing::Level;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -83,10 +80,7 @@ struct App {
     table_state: TableState,
     scroll_state: ScrollbarState,
     character_index: usize,
-    transactions: Vec<Transaction>,
-    recommended_transaction: Option<Transaction>,
-    recommended_input: String,
-    file_path: String,
+    transactions_table: TransactionsTable,
     input: String,
     error_msg: String,
 }
@@ -99,48 +93,20 @@ impl App {
             table_state: TableState::default().with_selected(0),
             scroll_state: ScrollbarState::new(0),
             character_index: 1,
-            input: "".to_string(),
             error_msg: "".to_string(),
-            transactions: Vec::new(),
-            recommended_transaction: None,
-            recommended_input: "".to_string(),
-            file_path,
-        }
-    }
-
-    fn update_recommended_input(&mut self) {
-        if let Some((_, column)) = self.table_state.selected_cell() {
-            self.recommended_input = self
-                .recommended_transaction
-                .as_ref()
-                .map(|transaction| {
-                    let recommended_row = transaction.generate_row_text();
-                    recommended_row
-                        .get(column)
-                        .map_or("".to_string(), |recommendation| {
-                            trace_dbg!(level: Level::INFO, recommendation);
-                            let input_len = self.input.len();
-                            if input_len >= recommendation.len() {
-                                "".to_string()
-                            } else {
-                                recommendation[input_len..].to_string()
-                            }
-                        })
-                })
-                .unwrap_or("".to_string());
+            transactions_table: TransactionsTable::new(file_path),
+            input: "".to_string(),
         }
     }
 
     fn update_editing_text(&mut self) {
         if let Some((row, column)) = self.table_state.selected_cell() {
-            if let Some(selected_transaction) = self.transactions.get(row) {
-                let transaction_row = selected_transaction.generate_row_text();
-                if let Some(editing_text) = transaction_row.get(column) {
-                    self.input = editing_text.clone();
-                    self.error_msg = "".to_string();
-                    self.character_index = self.input.chars().count();
-                    self.update_recommended_input();
-                }
+            if let Some(editing_text) = self.transactions_table.get_cell_text(row, column) {
+                self.input = editing_text.clone();
+                self.error_msg = "".to_string();
+                self.character_index = self.input.chars().count();
+                self.transactions_table
+                    .update_recommended_input(column, self.character_index);
             }
         }
     }
@@ -151,36 +117,24 @@ impl App {
         self.update_editing_text();
     }
 
-    fn new_transaction(&mut self) {
-        let last_transaction_date = self.transactions.last().unwrap().date;
-        self.transactions
-            .push(Transaction::new(last_transaction_date));
-        let mut recommended_transaction = self.transactions.last().unwrap().clone();
-        recommended_transaction.details = "this is a recommendation".to_string();
-        self.recommended_transaction = Some(recommended_transaction);
-        self.update_selected(self.transactions.len() - 1);
-    }
-
     fn delete_transaction(&mut self) {
-        match self.table_state.selected() {
-            Some(i) => {
-                if i < self.transactions.len() {
-                    self.transactions.remove(i);
-                }
-            }
-            None => {}
+        if let Some(i) = self.table_state.selected() {
+            self.transactions_table.delete_transaction(i);
         }
     }
 
     fn next_row(&mut self, add_new_row_if_end: ShouldAddNewRow) {
         let i = match self.table_state.selected() {
             Some(i) => {
-                if i >= self.transactions.len() - 1 {
+                if i >= self.transactions_table.len() - 1 {
                     match add_new_row_if_end {
-                        ShouldAddNewRow::Yes => self.new_transaction(),
+                        ShouldAddNewRow::Yes => {
+                            self.transactions_table.new_transaction();
+                            self.update_selected(self.transactions_table.len() - 1);
+                        }
                         ShouldAddNewRow::No => {}
                     }
-                    self.transactions.len() - 1
+                    self.transactions_table.len() - 1
                 } else {
                     i + 1
                 }
@@ -210,7 +164,7 @@ impl App {
     }
 
     fn last_row(&mut self) {
-        let i = self.transactions.len() - 1;
+        let i = self.transactions_table.len() - 1;
         self.update_selected(i);
     }
 
@@ -271,15 +225,10 @@ impl App {
     }
 
     fn update_recommendation(&mut self) {
-        if let Some((_, column_index)) = self.table_state.selected_cell() {
-            self.recommended_transaction.as_mut().map(|transaction| {
-                match transaction.mutate_field(column_index, &self.input) {
-                    Ok(_) => {}
-                    Err(_) => {}
-                }
-            });
+        if let Some((_, column)) = self.table_state.selected_cell() {
+            self.transactions_table
+                .update_recommended_transaction(column, &self.input);
         }
-        self.update_recommended_input();
     }
 
     fn enter_char(&mut self, ch: char) {
@@ -300,6 +249,7 @@ impl App {
 
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
+            self.update_recommendation();
         }
     }
 
@@ -312,20 +262,10 @@ impl App {
     }
 
     fn commit_input(&mut self) -> Result<(), String> {
-        if let Some((row, column_index)) = self.table_state.selected_cell() {
-            if let Some(transaction) = self.transactions.get_mut(row) {
-                transaction.mutate_field(column_index, &self.input)?
-            }
+        if let Some((row, column)) = self.table_state.selected_cell() {
+            self.transactions_table
+                .update_transaction(row, column, &self.input)?;
         }
-        Ok(())
-    }
-
-    fn save_transactions(&mut self) -> Result<()> {
-        self.transactions.sort();
-        fs::write(
-            &self.file_path,
-            serde_json::to_string_pretty(&self.transactions)?,
-        )?;
         Ok(())
     }
 
@@ -355,7 +295,7 @@ impl App {
                 KeyCode::PageDown => self.last_row(),
 
                 KeyCode::Char('c') if ctrl_pressed => self.next_color(),
-                KeyCode::Char('n') if ctrl_pressed => self.new_transaction(),
+                KeyCode::Char('n') if ctrl_pressed => self.transactions_table.new_transaction(),
                 KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
                 KeyCode::Backspace => self.delete_char(),
                 KeyCode::Delete => self.delete_char_forward(),
@@ -371,16 +311,14 @@ impl App {
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
-        let file_string = fs::read_to_string(&self.file_path)?;
-        self.transactions = serde_json::from_str(&file_string)?;
-        self.transactions.sort();
+        self.transactions_table.load()?;
         self.last_row();
         self.next_column();
         loop {
             terminal.draw(|frame| self.draw(frame))?;
             if let Event::Key(key) = event::read()? {
                 if let Some(_) = self.handle_edit_events(key) {
-                    self.save_transactions()?;
+                    self.transactions_table.save_transactions()?;
                     return Ok(());
                 }
             }
@@ -422,7 +360,7 @@ impl App {
             .style(header_style)
             .height(1);
         let rows = self
-            .transactions
+            .transactions_table
             .iter()
             .enumerate()
             .map(|(i, transaction)| {
@@ -480,7 +418,7 @@ impl App {
         let edit_text = Line::from(vec![
             Span::from(&self.input),
             Span::from(&self.error_msg).fg(tailwind::ROSE.c600),
-            Span::from(&self.recommended_input).fg(tailwind::SLATE.c600),
+            Span::from(&self.transactions_table.recommended_input).fg(tailwind::SLATE.c600),
         ]);
         let edit_bar = Paragraph::new(edit_text)
             .style(

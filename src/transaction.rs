@@ -5,8 +5,11 @@ use ratatui::{
     widgets::{Cell, Row},
 };
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, fmt::Display, str::FromStr};
+use std::{cmp::Ordering, fmt::Display, fs, slice::Iter, str::FromStr};
 use time::{Date, Month};
+use tracing::Level;
+
+use crate::trace_dbg;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SimpleDate {
@@ -102,6 +105,17 @@ pub enum TransactionField {
 }
 
 impl TransactionField {
+    pub fn all_fields() -> Vec<Self> {
+        vec![
+            Self::Date,
+            Self::Amount,
+            Self::Details,
+            Self::Category,
+            Self::Method,
+            Self::Currency,
+        ]
+    }
+
     pub fn get(index: usize) -> Option<Self> {
         match index {
             0 => Some(Self::Date),
@@ -151,8 +165,8 @@ impl Transaction {
         }
     }
 
-    pub fn mutate_field(&mut self, column_index: usize, input: &str) -> Result<(), String> {
-        match TransactionField::get(column_index) {
+    pub fn mutate_field(&mut self, field_index: usize, input: &str) -> Result<(), String> {
+        match TransactionField::get(field_index) {
             Some(field) => match field {
                 TransactionField::Date => match SimpleDate::try_from(input) {
                     Ok(date) => self.date = date,
@@ -172,21 +186,25 @@ impl Transaction {
         Ok(())
     }
 
-    pub fn generate_row_text(&self) -> [String; 6] {
-        [
-            format!("{}", self.date),
-            format!("{}", self.amount),
-            self.details.clone(),
-            self.category.clone(),
-            self.method.clone(),
-            self.currency.clone(),
-        ]
+    fn get_field_text(&self, field: TransactionField) -> String {
+        match field {
+            TransactionField::Date => format!("{}", self.date),
+            TransactionField::Amount => format!("{}", self.amount),
+            TransactionField::Details => self.details.clone(),
+            TransactionField::Category => self.category.clone(),
+            TransactionField::Method => self.method.clone(),
+            TransactionField::Currency => self.currency.clone(),
+        }
+    }
+
+    fn get_column_text(&self, field_index: usize) -> Option<String> {
+        TransactionField::get(field_index).map(|field| self.get_field_text(field))
     }
 
     pub fn generate_row(&self) -> Row {
-        let cells: Vec<Cell> = self
-            .generate_row_text()
-            .iter()
+        let cells: Vec<Cell> = TransactionField::all_fields()
+            .into_iter()
+            .map(|field| self.get_field_text(field))
             .map(|text| Cell::from(Text::from(format!("\n{}\n", text))))
             .collect();
         Row::new(cells)
@@ -216,5 +234,126 @@ impl PartialOrd for Transaction {
 impl Ord for Transaction {
     fn cmp(&self, other: &Self) -> Ordering {
         self.date.cmp(&other.date)
+    }
+}
+
+pub struct TransactionsTable {
+    transactions: Vec<Transaction>,
+    recommended_transaction: Option<Transaction>,
+    pub recommended_input: String,
+    file_path: String,
+}
+
+impl TransactionsTable {
+    pub fn new(file_path: String) -> Self {
+        Self {
+            transactions: Vec::new(),
+            recommended_transaction: None,
+            recommended_input: "".to_string(),
+            file_path,
+        }
+    }
+
+    pub fn load(&mut self) -> Result<()> {
+        let file_string = fs::read_to_string(&self.file_path)?;
+        self.transactions = serde_json::from_str(&file_string)?;
+        self.transactions.sort();
+        Ok(())
+    }
+
+    pub fn save_transactions(&mut self) -> Result<()> {
+        self.transactions.sort();
+        fs::write(
+            &self.file_path,
+            serde_json::to_string_pretty(&self.transactions)?,
+        )?;
+        Ok(())
+    }
+
+    pub fn new_transaction(&mut self) {
+        let last_transaction_date = self.transactions.last().unwrap().date;
+        self.transactions
+            .push(Transaction::new(last_transaction_date));
+        let mut recommended_transaction = self.transactions.last().unwrap().clone();
+        recommended_transaction.details = "this is a recommendation".to_string();
+        self.recommended_transaction = Some(recommended_transaction);
+    }
+
+    pub fn delete_transaction(&mut self, i: usize) {
+        if i < self.len() {
+            self.transactions.remove(i);
+        }
+    }
+
+    pub fn update_transaction(
+        &mut self,
+        row: usize,
+        column: usize,
+        input: &str,
+    ) -> Result<(), String> {
+        if let Some(transaction) = self.transactions.get_mut(row) {
+            transaction.mutate_field(column, input)?
+        }
+        Ok(())
+    }
+
+    pub fn get_cell_text(&mut self, row: usize, column: usize) -> Option<String> {
+        self.transactions
+            .get(row)
+            .map(|transaction| transaction.get_column_text(column))
+            .flatten()
+    }
+
+    pub fn update_recommended_input(&mut self, column: usize, character_index: usize) {
+        self.recommended_input = self
+            .recommended_transaction
+            .as_ref()
+            .map(|transaction| {
+                transaction
+                    .get_column_text(column)
+                    .map_or("".to_string(), |recommendation| {
+                        trace_dbg!(level: Level::INFO, &recommendation);
+                        let input_len = character_index;
+                        if input_len >= recommendation.len() {
+                            "".to_string()
+                        } else {
+                            recommendation[input_len..].to_string()
+                        }
+                    })
+            })
+            .unwrap_or("".to_string());
+    }
+
+    pub fn update_recommended_transaction(&mut self, column: usize, input: &str) {
+        let recommendation = self
+            .transactions
+            .iter()
+            .rev()
+            .find(|transaction| {
+                match transaction
+                    .get_column_text(column)
+                    .map(|field| field.starts_with(input))
+                {
+                    Some(fit) => fit,
+                    None => false,
+                }
+            })
+            .map(|transaction| transaction.get_column_text(column))
+            .flatten();
+        self.recommended_transaction.as_mut().map(|transaction| {
+            match transaction.mutate_field(column, input) {
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        });
+        self.update_recommended_input(column, input.chars().count());
+    }
+
+    pub fn iter(&self) -> Iter<'_, Transaction> {
+        self.transactions.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.transactions.len()
     }
 }
