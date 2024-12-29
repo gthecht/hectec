@@ -240,7 +240,7 @@ impl Ord for Transaction {
 pub struct TransactionsTable {
     transactions: Vec<Transaction>,
     recommended_transaction: Option<Transaction>,
-    pub recommended_input: String,
+    recommended_input: Option<String>,
     file_path: String,
 }
 
@@ -249,7 +249,7 @@ impl TransactionsTable {
         Self {
             transactions: Vec::new(),
             recommended_transaction: None,
-            recommended_input: "".to_string(),
+            recommended_input: None,
             file_path,
         }
     }
@@ -292,6 +292,10 @@ impl TransactionsTable {
         input: &str,
     ) -> Result<(), String> {
         if let Some(transaction) = self.transactions.get_mut(row) {
+            let input = self
+                .recommended_input
+                .as_ref()
+                .map_or(input, |r| r.as_str());
             transaction.mutate_field(column, input)?
         }
         Ok(())
@@ -304,28 +308,8 @@ impl TransactionsTable {
             .flatten()
     }
 
-    pub fn update_recommended_input(&mut self, column: usize, character_index: usize) {
+    pub fn update_recommended_input(&mut self, column: usize, input: &str) {
         self.recommended_input = self
-            .recommended_transaction
-            .as_ref()
-            .map(|transaction| {
-                transaction
-                    .get_column_text(column)
-                    .map_or("".to_string(), |recommendation| {
-                        trace_dbg!(level: Level::INFO, &recommendation);
-                        let input_len = character_index;
-                        if input_len >= recommendation.len() {
-                            "".to_string()
-                        } else {
-                            recommendation[input_len..].to_string()
-                        }
-                    })
-            })
-            .unwrap_or("".to_string());
-    }
-
-    pub fn update_recommended_transaction(&mut self, column: usize, input: &str) {
-        let recommendation = self
             .transactions
             .iter()
             .rev()
@@ -340,13 +324,24 @@ impl TransactionsTable {
             })
             .map(|transaction| transaction.get_column_text(column))
             .flatten();
-        self.recommended_transaction.as_mut().map(|transaction| {
-            match transaction.mutate_field(column, input) {
-                Ok(_) => {}
-                Err(_) => {}
-            }
-        });
-        self.update_recommended_input(column, input.chars().count());
+    }
+
+    pub fn get_recommended_input(&self, input: &str) -> &str {
+        self.recommended_input
+            .as_ref()
+            .map(|recommended_input| {
+                let input_len = input.chars().count();
+                if input_len > recommended_input.chars().count() {
+                    ""
+                } else {
+                    &recommended_input[input_len..]
+                }
+            })
+            .unwrap_or("")
+    }
+
+    pub fn clear_recommended_input(&mut self) {
+        self.recommended_input = None;
     }
 
     pub fn iter(&self) -> Iter<'_, Transaction> {

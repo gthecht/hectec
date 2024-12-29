@@ -106,7 +106,7 @@ impl App {
                 self.error_msg = "".to_string();
                 self.character_index = self.input.chars().count();
                 self.transactions_table
-                    .update_recommended_input(column, self.character_index);
+                    .update_recommended_input(column, &self.input);
             }
         }
     }
@@ -227,7 +227,7 @@ impl App {
     fn update_recommendation(&mut self) {
         if let Some((_, column)) = self.table_state.selected_cell() {
             self.transactions_table
-                .update_recommended_transaction(column, &self.input);
+                .update_recommended_input(column, &self.input);
         }
     }
 
@@ -258,6 +258,8 @@ impl App {
         self.move_cursor_right();
         if self.character_index > current_character_index {
             self.delete_char();
+        } else {
+            self.transactions_table.clear_recommended_input();
         }
     }
 
@@ -418,7 +420,8 @@ impl App {
         let edit_text = Line::from(vec![
             Span::from(&self.input),
             Span::from(&self.error_msg).fg(tailwind::ROSE.c600),
-            Span::from(&self.transactions_table.recommended_input).fg(tailwind::SLATE.c600),
+            Span::from(self.transactions_table.get_recommended_input(&self.input))
+                .fg(tailwind::SLATE.c600),
         ]);
         let edit_bar = Paragraph::new(edit_text)
             .style(
