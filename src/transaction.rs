@@ -98,6 +98,7 @@ pub enum TransactionField {
     Details,
     Category,
     Method,
+    Direction,
     Currency,
 }
 
@@ -109,6 +110,7 @@ impl TransactionField {
             Self::Details,
             Self::Category,
             Self::Method,
+            Self::Direction,
             Self::Currency,
         ]
     }
@@ -120,18 +122,25 @@ impl TransactionField {
             2 => Some(Self::Details),
             3 => Some(Self::Category),
             4 => Some(Self::Method),
-            5 => Some(Self::Currency),
+            5 => Some(Self::Direction),
+            6 => Some(Self::Currency),
             _ => None,
         }
     }
 
     pub fn widths() -> Vec<u16> {
-        vec![11, 10, 100, 15, 11, 9]
+        vec![11, 10, 100, 15, 11, 6, 9]
     }
 
     pub fn names() -> Vec<String> {
         vec![
-            "Date", "Amount", "Details", "Category", "Method", "Currency",
+            "Date",
+            "Amount",
+            "Details",
+            "Category",
+            "Method",
+            "Direction",
+            "Currency",
         ]
         .into_iter()
         .map(|s| s.to_string())
@@ -144,10 +153,11 @@ impl TransactionField {
 pub struct Transaction {
     pub date: SimpleDate,
     amount: f64,
-    currency: String,
     pub details: String,
     pub category: String,
-    pub method: String,
+    method: String,
+    direction: String,
+    currency: String,
 }
 
 impl Transaction {
@@ -155,10 +165,11 @@ impl Transaction {
         Transaction {
             date,
             amount: 0.0,
-            currency: "".to_string(),
             details: "".to_string(),
             category: "".to_string(),
             method: "".to_string(),
+            direction: "".to_string(),
+            currency: "".to_string(),
         }
     }
 
@@ -176,6 +187,7 @@ impl Transaction {
                 TransactionField::Details => self.details = input.to_string(),
                 TransactionField::Category => self.category = input.to_string(),
                 TransactionField::Method => self.method = input.to_string(),
+                TransactionField::Direction => self.direction = input.to_string(),
                 TransactionField::Currency => self.currency = input.to_string(),
             },
             None => {}
@@ -190,6 +202,7 @@ impl Transaction {
             TransactionField::Details => self.details.clone(),
             TransactionField::Category => self.category.clone(),
             TransactionField::Method => self.method.clone(),
+            TransactionField::Direction => self.direction.clone(),
             TransactionField::Currency => self.currency.clone(),
         }
     }
