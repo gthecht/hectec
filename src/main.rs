@@ -35,8 +35,8 @@ const PALETTES: [tailwind::Palette; 4] = [
 ];
 
 const INFO_TEXT: [&str; 2] = [
-    "(ESC) quit | (↑) up | (↓ | ENTER) down | (SHIFT+TAB) left | (TAB) right | PgUp go to first | PgDn go to last",
-    "(CTRL+N) new transaction | (CTRL+D) delete selected | (CTRL+C) change color",
+    "(ESC) save&quit | (↑) up | (↓ | ENTER) down | (SHIFT+TAB) left | (TAB) right & insert recommended text | PgUp go to first | PgDn go to last",
+    "(CTRL+D) delete selected | (CTRL+C) change color | (DEL at end of test) remove recommended text",
 ];
 
 struct TableColors {
