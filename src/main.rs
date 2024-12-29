@@ -106,7 +106,7 @@ impl App {
                 self.error_msg = "".to_string();
                 self.character_index = self.input.chars().count();
                 self.transactions_table
-                    .update_recommended_input(column, &self.input);
+                    .update_recommended_input(row, column, &self.input);
             }
         }
     }
@@ -225,9 +225,9 @@ impl App {
     }
 
     fn update_recommendation(&mut self) {
-        if let Some((_, column)) = self.table_state.selected_cell() {
+        if let Some((row, column)) = self.table_state.selected_cell() {
             self.transactions_table
-                .update_recommended_input(column, &self.input);
+                .update_recommended_input(row, column, &self.input);
         }
     }
 
