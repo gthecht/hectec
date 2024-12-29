@@ -186,7 +186,7 @@ impl Transaction {
     fn get_field_text(&self, field: &TransactionField) -> String {
         match field {
             TransactionField::Date => format!("{}", self.date),
-            TransactionField::Amount => format!("{}", self.amount),
+            TransactionField::Amount => format!("{:.2}", self.amount),
             TransactionField::Details => self.details.clone(),
             TransactionField::Category => self.category.clone(),
             TransactionField::Method => self.method.clone(),
