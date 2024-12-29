@@ -16,13 +16,15 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use style::palette::tailwind;
+use transaction::SaveFileType;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
     initialize_logging()?;
     let terminal = ratatui::init();
-    let file_path = "transactions.json";
-    let app_result = App::new(file_path.to_string()).run(terminal);
+    let file_path = "transactions.csv";
+    let file_type = SaveFileType::Csv;
+    let app_result = App::new(file_path.to_string(), file_type).run(terminal);
     ratatui::restore();
     app_result
 }
@@ -86,7 +88,7 @@ struct App {
 }
 
 impl App {
-    fn new(file_path: String) -> Self {
+    fn new(file_path: String, file_type: SaveFileType) -> Self {
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
@@ -94,7 +96,7 @@ impl App {
             scroll_state: ScrollbarState::new(0),
             character_index: 1,
             error_msg: "".to_string(),
-            transactions_table: TransactionsTable::new(file_path),
+            transactions_table: TransactionsTable::new(file_path, file_type),
             input: "".to_string(),
         }
     }

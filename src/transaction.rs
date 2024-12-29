@@ -1,11 +1,18 @@
 use color_eyre::Result;
 use core::fmt;
+use csv::{ReaderBuilder, WriterBuilder};
 use ratatui::{
     text::Text,
     widgets::{Cell, Row},
 };
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, fmt::Display, fs, slice::Iter, str::FromStr};
+use std::{
+    cmp::Ordering,
+    fmt::Display,
+    fs::{self, File},
+    slice::Iter,
+    str::FromStr,
+};
 use time::{Date, Month};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -247,34 +254,81 @@ impl Ord for Transaction {
     }
 }
 
+pub enum SaveFileType {
+    Json,
+    Csv,
+}
+
 pub struct TransactionsTable {
     transactions: Vec<Transaction>,
     recommended_input: Option<String>,
     file_path: String,
+    file_type: SaveFileType,
 }
 
 impl TransactionsTable {
-    pub fn new(file_path: String) -> Self {
+    pub fn new(file_path: String, file_type: SaveFileType) -> Self {
         Self {
             transactions: Vec::new(),
             recommended_input: None,
             file_path,
+            file_type,
         }
     }
 
     pub fn load(&mut self) -> Result<()> {
+        match self.file_type {
+            SaveFileType::Json => self.load_from_json(),
+            SaveFileType::Csv => self.load_from_csv(),
+        }
+    }
+
+    pub fn load_from_json(&mut self) -> Result<()> {
         let file_string = fs::read_to_string(&self.file_path)?;
         self.transactions = serde_json::from_str(&file_string)?;
         self.transactions.sort();
         Ok(())
     }
 
+    pub fn load_from_csv(&mut self) -> Result<()> {
+        let mut reader = ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(&self.file_path)?;
+        self.transactions = Vec::new();
+        for result in reader.deserialize() {
+            let transaction = result?;
+            self.transactions.push(transaction);
+        }
+        self.transactions.sort();
+        Ok(())
+    }
+
     pub fn save_transactions(&mut self) -> Result<()> {
+        match self.file_type {
+            SaveFileType::Json => self.save_to_json(),
+            SaveFileType::Csv => self.save_to_csv(),
+        }
+    }
+
+    pub fn save_to_json(&mut self) -> Result<()> {
         self.transactions.sort();
         fs::write(
             &self.file_path,
             serde_json::to_string_pretty(&self.transactions)?,
         )?;
+        Ok(())
+    }
+
+    pub fn save_to_csv(&mut self) -> Result<()> {
+        self.transactions.sort();
+        // let file = File::create("transactions.csv")?;
+        let mut writer = WriterBuilder::new()
+            .delimiter(b',')
+            .from_path(&self.file_path)?;
+        for transaction in &self.transactions {
+            writer.serialize(transaction)?;
+        }
+        writer.flush()?;
         Ok(())
     }
 
