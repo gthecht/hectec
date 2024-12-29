@@ -297,7 +297,6 @@ impl App {
                 KeyCode::PageDown => self.last_row(),
 
                 KeyCode::Char('c') if ctrl_pressed => self.next_color(),
-                KeyCode::Char('n') if ctrl_pressed => self.transactions_table.new_transaction(),
                 KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
                 KeyCode::Backspace => self.delete_char(),
                 KeyCode::Delete => self.delete_char_forward(),

@@ -7,9 +7,6 @@ use ratatui::{
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, fmt::Display, fs, slice::Iter, str::FromStr};
 use time::{Date, Month};
-use tracing::Level;
-
-use crate::trace_dbg;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SimpleDate {
