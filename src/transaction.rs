@@ -1,18 +1,13 @@
 use color_eyre::Result;
 use core::fmt;
 use csv::{ReaderBuilder, WriterBuilder};
+use eyre::bail;
 use ratatui::{
     text::Text,
     widgets::{Cell, Row},
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    cmp::Ordering,
-    fmt::Display,
-    fs::{self, File},
-    slice::Iter,
-    str::FromStr,
-};
+use std::{cmp::Ordering, fmt::Display, fs, path::PathBuf, slice::Iter, str::FromStr};
 use time::{Date, Month};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -260,20 +255,34 @@ impl Ord for Transaction {
     }
 }
 
-pub enum SaveFileType {
+pub enum FileType {
     Json,
     Csv,
+    Unknown,
+}
+
+impl FileType {
+    pub fn new(file_path: &PathBuf) -> FileType {
+        let extension = file_path.extension().map(|ext| ext.to_str()).flatten();
+        match extension {
+            Some("json") => FileType::Json,
+            Some("csv") => FileType::Csv,
+            Some(_) => FileType::Unknown,
+            None => FileType::Unknown,
+        }
+    }
 }
 
 pub struct TransactionsTable {
     transactions: Vec<Transaction>,
     recommended_input: Option<String>,
-    file_path: String,
-    file_type: SaveFileType,
+    file_path: PathBuf,
+    file_type: FileType,
 }
 
 impl TransactionsTable {
-    pub fn new(file_path: String, file_type: SaveFileType) -> Self {
+    pub fn new(file_path: PathBuf) -> Self {
+        let file_type = FileType::new(&file_path);
         Self {
             transactions: Vec::new(),
             recommended_input: None,
@@ -284,8 +293,9 @@ impl TransactionsTable {
 
     pub fn load(&mut self) -> Result<()> {
         match self.file_type {
-            SaveFileType::Json => self.load_from_json(),
-            SaveFileType::Csv => self.load_from_csv(),
+            FileType::Json => self.load_from_json(),
+            FileType::Csv => self.load_from_csv(),
+            FileType::Unknown => bail!("File type unknown"),
         }
     }
 
@@ -311,8 +321,9 @@ impl TransactionsTable {
 
     pub fn save_transactions(&mut self) -> Result<()> {
         match self.file_type {
-            SaveFileType::Json => self.save_to_json(),
-            SaveFileType::Csv => self.save_to_csv(),
+            FileType::Json => self.save_to_json(),
+            FileType::Csv => self.save_to_csv(),
+            FileType::Unknown => bail!("File type unknown"),
         }
     }
 

@@ -1,5 +1,8 @@
 mod logger;
 mod transaction;
+use std::env;
+use std::path::PathBuf;
+
 use crate::logger::initialize_logging;
 use crate::transaction::{TransactionField, TransactionsTable};
 use color_eyre::Result;
@@ -16,15 +19,17 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use style::palette::tailwind;
-use transaction::SaveFileType;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
     initialize_logging()?;
+    let args: Vec<String> = env::args().collect();
     let terminal = ratatui::init();
-    let file_path = "transactions.csv";
-    let file_type = SaveFileType::Csv;
-    let app_result = App::new(file_path.to_string(), file_type).run(terminal);
+    let default_path = PathBuf::from("transactions.csv");
+    let file_path = args
+        .get(1)
+        .map_or(default_path, |input| PathBuf::from(input));
+    let app_result = App::new(file_path).run(terminal);
     ratatui::restore();
     app_result
 }
@@ -88,7 +93,7 @@ struct App {
 }
 
 impl App {
-    fn new(file_path: String, file_type: SaveFileType) -> Self {
+    fn new(file_path: PathBuf) -> Self {
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
@@ -96,7 +101,7 @@ impl App {
             scroll_state: ScrollbarState::new(0),
             character_index: 1,
             error_msg: "".to_string(),
-            transactions_table: TransactionsTable::new(file_path, file_type),
+            transactions_table: TransactionsTable::new(file_path),
             input: "".to_string(),
         }
     }
