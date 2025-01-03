@@ -131,7 +131,7 @@ impl TransactionField {
     }
 
     pub fn widths() -> Vec<u16> {
-        vec![11, 10, 100, 15, 11, 6, 9]
+        vec![11, 10, 100, 15, 9, 9, 9]
     }
 
     pub fn names() -> Vec<String> {
