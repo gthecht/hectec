@@ -1,10 +1,12 @@
 mod input_page;
+mod instructions;
 mod logger;
 mod transaction;
 use std::env;
 use std::path::PathBuf;
 
 use crate::input_page::InputPage;
+use crate::instructions::Instructions;
 use crate::logger::initialize_logging;
 use crate::transaction::TransactionsTable;
 use color_eyre::Result;
@@ -12,9 +14,8 @@ use crossterm::event::{KeyEvent, KeyModifiers};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Rect},
-    style::{self, Color, Style},
-    text::Text,
-    widgets::{Block, BorderType, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    style::{self, Color},
+    widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState},
     DefaultTerminal, Frame,
 };
 use style::palette::tailwind;
@@ -38,11 +39,6 @@ const PALETTES: [tailwind::Palette; 4] = [
     tailwind::EMERALD,
     tailwind::RED,
     tailwind::INDIGO,
-];
-
-const INFO_TEXT: [&str; 2] = [
-    "(ESC) save&quit | (↑) up | (↓/ENTER) down | (SHIFT+TAB) prev-column | (TAB) next-column & insert recommended text",
-    "PgUp/PgDn go to first/last | (CTRL+D) delete selected | (CTRL+C) change color | (DEL at end of text) remove recommended text",
 ];
 
 struct TableColors {
@@ -80,7 +76,7 @@ struct App {
     color_index: usize,
     scroll_state: ScrollbarState,
     input_page: InputPage,
-    show_help: bool,
+    instructions: Instructions,
 }
 
 impl App {
@@ -92,7 +88,7 @@ impl App {
             color_index: 0,
             scroll_state: ScrollbarState::new(0),
             input_page,
-            show_help: false,
+            instructions: Instructions::oneline(),
         }
     }
 
@@ -107,7 +103,7 @@ impl App {
             match key.code {
                 KeyCode::Esc => return Some(()),
                 KeyCode::Char('c') if ctrl_pressed => self.next_color(),
-                KeyCode::Char('h') if ctrl_pressed => self.show_help = true,
+                KeyCode::Char('h') if ctrl_pressed => self.instructions.toggle(),
                 _ => self.input_page.handle_key_events(key),
             }
         }
@@ -128,10 +124,13 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = &Layout::vertical([Constraint::Length(4), Constraint::Min(8)]);
+        let vertical = &Layout::vertical([
+            Constraint::Length(self.instructions.get_height()),
+            Constraint::Min(8),
+        ]);
         let rects = vertical.split(frame.area());
 
-        self.render_instructions(frame, rects[0]);
+        self.instructions.draw(frame, rects[0], &self.colors);
         self.input_page.draw(frame, rects[1], &self.colors);
         self.render_scrollbar(frame, rects[1]);
     }
@@ -148,21 +147,5 @@ impl App {
             }),
             &mut self.scroll_state,
         );
-    }
-
-    fn render_instructions(&self, frame: &mut Frame, area: Rect) {
-        let instructions = Paragraph::new(Text::from_iter(INFO_TEXT))
-            .style(
-                Style::new()
-                    .fg(self.colors.row_fg)
-                    .bg(self.colors.buffer_bg),
-            )
-            .centered()
-            .block(
-                Block::bordered()
-                    .border_type(BorderType::Double)
-                    .border_style(Style::new().fg(self.colors.border_color)),
-            );
-        frame.render_widget(instructions, area);
     }
 }
