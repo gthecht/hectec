@@ -7,7 +7,15 @@ use ratatui::{
     widgets::{Cell, Row},
 };
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, fmt::Display, fs, path::PathBuf, slice::Iter, str::FromStr};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    fs,
+    path::PathBuf,
+    slice::Iter,
+    str::FromStr,
+};
 use time::{Date, Month};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -273,6 +281,83 @@ impl FileType {
     }
 }
 
+pub type MonthInYear = (
+    i32, // year
+    u8,  //month
+);
+
+type SummaryMap = HashMap<(String, MonthInYear), f64>;
+
+pub struct TransactionsReport {
+    months: HashSet<MonthInYear>,
+    categories: HashSet<String>,
+    category_summary: SummaryMap,
+}
+
+impl TransactionsReport {
+    pub fn new(transactions: &Vec<Transaction>) -> Self {
+        let mut months: HashSet<MonthInYear> = HashSet::new();
+        let mut categories: HashSet<String> = HashSet::new();
+        let mut category_summary: SummaryMap = HashMap::default();
+        transactions.iter().for_each(|transaction| {
+            let month_in_year = (transaction.date.year, transaction.date.month);
+            let category = transaction.category.clone();
+            months.insert(month_in_year);
+            categories.insert(category.clone());
+            *category_summary
+                .entry((category, month_in_year))
+                .or_insert(0.0) += transaction.amount;
+        });
+        TransactionsReport {
+            months,
+            categories,
+            category_summary,
+        }
+    }
+
+    pub fn rows_len(&self) -> usize {
+        self.categories.len()
+    }
+
+    pub fn cols_len(&self) -> usize {
+        self.months.len()
+    }
+
+    pub fn header_row(&self) -> Vec<String> {
+        let mut headers = vec!["categories".to_string()];
+        headers.extend(
+            self.months
+                .iter()
+                .map(|(year, month)| format!("{:04}.{:02}", year, month))
+                .collect::<Vec<String>>(),
+        );
+        headers
+    }
+
+    pub fn get_rows(&self) -> Vec<Vec<String>> {
+        self.categories
+            .iter()
+            .map(|category| {
+                let mut row = vec![format!("\n{}\n", category)];
+                row.extend(
+                    self.months
+                        .iter()
+                        .map(|month| {
+                            format!(
+                                "\n{:02.2}\n",
+                                self.category_summary
+                                    .get(&(category.clone(), *month))
+                                    .unwrap_or(&0.0)
+                            )
+                        })
+                        .collect::<Vec<String>>(),
+                );
+                row
+            })
+            .collect()
+    }
+}
+
 pub struct TransactionsTable {
     transactions: Vec<Transaction>,
     recommended_input: Option<String>,
@@ -447,5 +532,9 @@ impl TransactionsTable {
 
     pub fn len(&self) -> usize {
         self.transactions.len()
+    }
+
+    pub fn generate_report(&self) -> TransactionsReport {
+        TransactionsReport::new(&self.transactions)
     }
 }

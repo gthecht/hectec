@@ -100,12 +100,11 @@ struct App {
 impl App {
     fn new(file_path: PathBuf) -> Self {
         let transactions_table = TransactionsTable::new(file_path);
-        let input_page = InputPage::new(transactions_table);
         Self {
             colors: TableColors::new(&PALETTES[0]),
             color_index: 0,
             scroll_state: ScrollbarState::new(0),
-            input_page,
+            input_page: InputPage::new(transactions_table),
             report_page: ReportPage::new(),
             instructions: Instructions::oneline(),
             showing_page: Page::Input,
@@ -117,6 +116,11 @@ impl App {
         self.colors = TableColors::new(&PALETTES[self.color_index]);
     }
 
+    fn reload_report(&mut self) {
+        self.report_page
+            .reload(self.input_page.transactions_table.generate_report());
+    }
+
     fn handle_key_events(&mut self, key: KeyEvent) -> Option<()> {
         if key.kind == KeyEventKind::Press {
             let ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
@@ -124,8 +128,14 @@ impl App {
                 KeyCode::Esc => return Some(()),
                 KeyCode::Char('c') if ctrl_pressed => self.next_color(),
                 KeyCode::Char('h') if ctrl_pressed => self.instructions.toggle(),
-                KeyCode::Char('r') if ctrl_pressed => self.showing_page.toggle(),
-                _ => self.input_page.handle_key_events(key),
+                KeyCode::Char('r') if ctrl_pressed => {
+                    self.showing_page.toggle();
+                    self.reload_report();
+                }
+                _ => match self.showing_page {
+                    Page::Input => self.input_page.handle_key_events(key),
+                    Page::Report => self.report_page.handle_key_events(key),
+                },
             }
         }
         None

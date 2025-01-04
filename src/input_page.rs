@@ -239,7 +239,6 @@ impl InputPage {
                 KeyCode::Up => self.previous_row(),
                 KeyCode::PageUp => self.first_row(),
                 KeyCode::PageDown => self.last_row(),
-
                 KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
                 KeyCode::Backspace => self.delete_char(),
                 KeyCode::Delete => self.delete_char_forward(),
