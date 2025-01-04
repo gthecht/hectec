@@ -1,6 +1,7 @@
 mod input_page;
 mod instructions;
 mod logger;
+mod report_page;
 mod transaction;
 use std::env;
 use std::path::PathBuf;
@@ -18,6 +19,7 @@ use ratatui::{
     widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState},
     DefaultTerminal, Frame,
 };
+use report_page::ReportPage;
 use style::palette::tailwind;
 
 fn main() -> Result<()> {
@@ -71,12 +73,28 @@ impl TableColors {
     }
 }
 
+enum Page {
+    Input,
+    Report,
+}
+
+impl Page {
+    pub fn toggle(&mut self) {
+        match self {
+            Self::Input => *self = Self::Report,
+            Self::Report => *self = Self::Input,
+        }
+    }
+}
+
 struct App {
     colors: TableColors,
     color_index: usize,
     scroll_state: ScrollbarState,
     input_page: InputPage,
+    report_page: ReportPage,
     instructions: Instructions,
+    showing_page: Page,
 }
 
 impl App {
@@ -88,7 +106,9 @@ impl App {
             color_index: 0,
             scroll_state: ScrollbarState::new(0),
             input_page,
+            report_page: ReportPage::new(),
             instructions: Instructions::oneline(),
+            showing_page: Page::Input,
         }
     }
 
@@ -104,6 +124,7 @@ impl App {
                 KeyCode::Esc => return Some(()),
                 KeyCode::Char('c') if ctrl_pressed => self.next_color(),
                 KeyCode::Char('h') if ctrl_pressed => self.instructions.toggle(),
+                KeyCode::Char('r') if ctrl_pressed => self.showing_page.toggle(),
                 _ => self.input_page.handle_key_events(key),
             }
         }
@@ -131,8 +152,11 @@ impl App {
         let rects = vertical.split(frame.area());
 
         self.instructions.draw(frame, rects[0], &self.colors);
-        self.input_page.draw(frame, rects[1], &self.colors);
         self.render_scrollbar(frame, rects[1]);
+        match self.showing_page {
+            Page::Input => self.input_page.draw(frame, rects[1], &self.colors),
+            Page::Report => self.report_page.draw(frame, rects[1], &self.colors),
+        }
     }
 
     fn render_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
