@@ -2,6 +2,7 @@ use color_eyre::Result;
 use core::fmt;
 use csv::{ReaderBuilder, WriterBuilder};
 use eyre::bail;
+use itertools::Itertools;
 use ratatui::{
     text::Text,
     widgets::{Cell, Row},
@@ -289,8 +290,8 @@ pub type MonthInYear = (
 type SummaryMap = HashMap<(String, MonthInYear), f64>;
 
 pub struct TransactionsReport {
-    months: HashSet<MonthInYear>,
-    categories: HashSet<String>,
+    months: Vec<MonthInYear>,
+    categories: Vec<String>,
     category_summary: SummaryMap,
 }
 
@@ -301,13 +302,15 @@ impl TransactionsReport {
         let mut category_summary: SummaryMap = HashMap::default();
         transactions.iter().for_each(|transaction| {
             let month_in_year = (transaction.date.year, transaction.date.month);
-            let category = transaction.category.clone();
+            let category = format!("{} - {}", transaction.direction, transaction.category);
             months.insert(month_in_year);
             categories.insert(category.clone());
             *category_summary
                 .entry((category, month_in_year))
                 .or_insert(0.0) += transaction.amount;
         });
+        let months: Vec<MonthInYear> = months.into_iter().sorted().collect();
+        let categories: Vec<String> = categories.into_iter().sorted().collect();
         TransactionsReport {
             months,
             categories,
@@ -323,18 +326,19 @@ impl TransactionsReport {
         self.months.len()
     }
 
-    pub fn header_row(&self) -> Vec<String> {
+    pub fn header_row(&self, shift_right: usize) -> Vec<String> {
         let mut headers = vec!["categories".to_string()];
         headers.extend(
             self.months
                 .iter()
+                .skip(shift_right)
                 .map(|(year, month)| format!("{:04}.{:02}", year, month))
                 .collect::<Vec<String>>(),
         );
         headers
     }
 
-    pub fn get_rows(&self) -> Vec<Vec<String>> {
+    pub fn get_rows(&self, shift_right: usize) -> Vec<Vec<String>> {
         self.categories
             .iter()
             .map(|category| {
@@ -342,6 +346,7 @@ impl TransactionsReport {
                 row.extend(
                     self.months
                         .iter()
+                        .skip(shift_right)
                         .map(|month| {
                             format!(
                                 "\n{:02.2}\n",

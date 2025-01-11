@@ -12,6 +12,8 @@ use crate::{transaction::TransactionsReport, TableColors};
 pub struct ReportPage {
     summary: TransactionsReport,
     table_state: TableState,
+    number_of_columns: usize,
+    selected_column_buffer: usize,
 }
 
 impl ReportPage {
@@ -19,6 +21,8 @@ impl ReportPage {
         ReportPage {
             summary: TransactionsReport::new(&vec![]),
             table_state: TableState::default().with_selected(0),
+            number_of_columns: 14,
+            selected_column_buffer: 0,
         }
     }
 
@@ -70,26 +74,42 @@ impl ReportPage {
 
     fn select_first_column(&mut self) {
         self.table_state.select_column(Some(0));
+        self.selected_column_buffer = 0;
     }
 
     fn select_last_column(&mut self) {
         self.table_state
-            .select_column(Some(self.summary.cols_len() - 1));
+            .select_column(Some(self.number_of_columns - 1));
+        self.selected_column_buffer = self.summary.cols_len() - self.number_of_columns + 1;
     }
 
     fn next_column(&mut self) {
-        if self.table_state.selected_column() == Some(self.summary.cols_len() - 1) {
+        let table_selected_column = self.table_state.selected_column().unwrap_or(0);
+        if self.selected_column_buffer + table_selected_column >= self.summary.cols_len() {
             self.select_first_column();
             self.next_row();
         } else {
-            self.table_state.select_next_column();
+            if table_selected_column < self.number_of_columns - 2 {
+                self.table_state.select_next_column();
+            } else if self.selected_column_buffer
+                < self.summary.cols_len() - self.number_of_columns + 1
+            {
+                self.selected_column_buffer += 1;
+            } else {
+                self.table_state.select_next_column();
+            }
         }
     }
 
     fn previous_column(&mut self) {
-        if self.table_state.selected_column() == Some(0) {
+        let table_selected_column = self.table_state.selected_column().unwrap_or(0);
+        if self.selected_column_buffer + table_selected_column == 0 {
             self.select_last_column();
             self.previous_row();
+        } else if table_selected_column > 1 {
+            self.table_state.select_previous_column();
+        } else if self.selected_column_buffer > 0 {
+            self.selected_column_buffer = self.selected_column_buffer.saturating_sub(1);
         } else {
             self.table_state.select_previous_column();
         }
@@ -104,6 +124,8 @@ impl ReportPage {
                 KeyCode::Up => self.previous_row(),
                 KeyCode::PageUp => self.first_row(),
                 KeyCode::PageDown => self.last_row(),
+                KeyCode::Home => self.select_first_column(),
+                KeyCode::End => self.select_last_column(),
                 _ => {}
             }
         }
@@ -129,7 +151,7 @@ impl ReportPage {
 
         let header = self
             .summary
-            .header_row()
+            .header_row(self.selected_column_buffer)
             .into_iter()
             .map(|name| Cell::from(name))
             .collect::<Row>()
@@ -137,7 +159,7 @@ impl ReportPage {
             .height(1);
         let rows = self
             .summary
-            .get_rows()
+            .get_rows(self.selected_column_buffer)
             .into_iter()
             .enumerate()
             .map(|(i, row)| {
@@ -151,7 +173,9 @@ impl ReportPage {
                     .height(3)
             });
         let bar = " █ ";
-        let t = Table::new(rows, vec![10; 14])
+        let mut widths = vec![15];
+        widths.extend(std::iter::repeat(9).take(self.number_of_columns));
+        let t = Table::new(rows, widths)
             .header(header)
             .row_highlight_style(selected_row_style)
             .column_highlight_style(selected_col_style)
