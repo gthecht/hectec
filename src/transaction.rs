@@ -289,8 +289,10 @@ pub type MonthInYear = (
 
 type SummaryMap = HashMap<(String, MonthInYear), f64>;
 
+const DEFAULT_CURRENCY: &str = "ILS";
+
 pub struct TransactionsReport {
-    months: Vec<MonthInYear>,
+    pub months: Vec<MonthInYear>,
     categories: Vec<String>,
     category_summary: SummaryMap,
 }
@@ -301,15 +303,17 @@ impl TransactionsReport {
         let mut categories: HashSet<String> = HashSet::new();
         let mut category_summary: SummaryMap = HashMap::default();
         transactions.iter().for_each(|transaction| {
-            let month_in_year = (transaction.date.year, transaction.date.month);
-            let category = format!("{} - {}", transaction.direction, transaction.category);
-            months.insert(month_in_year);
-            categories.insert(category.clone());
-            *category_summary
-                .entry((category, month_in_year))
-                .or_insert(0.0) += transaction.amount;
+            if transaction.currency == DEFAULT_CURRENCY {
+                let month_in_year = (transaction.date.year, transaction.date.month);
+                let category = format!("{} - {}", transaction.direction, transaction.category);
+                months.insert(month_in_year);
+                categories.insert(category.clone());
+                *category_summary
+                    .entry((category, month_in_year))
+                    .or_insert(0.0) += transaction.amount;
+            }
         });
-        let months: Vec<MonthInYear> = months.into_iter().sorted().collect();
+        let months: Vec<MonthInYear> = months.into_iter().sorted().rev().collect();
         let categories: Vec<String> = categories.into_iter().sorted().collect();
         TransactionsReport {
             months,
@@ -319,47 +323,55 @@ impl TransactionsReport {
     }
 
     pub fn rows_len(&self) -> usize {
-        self.categories.len()
-    }
-
-    pub fn cols_len(&self) -> usize {
         self.months.len()
     }
 
-    pub fn header_row(&self, shift_right: usize) -> Vec<String> {
-        let mut headers = vec!["categories".to_string()];
-        headers.extend(
-            self.months
-                .iter()
-                .skip(shift_right)
-                .map(|(year, month)| format!("{:04}.{:02}", year, month))
-                .collect::<Vec<String>>(),
-        );
-        headers
+    pub fn get_months(&self) -> Vec<String> {
+        self.months
+            .iter()
+            .map(|(year, month)| format!("\n{:04}.{:02}", year, month))
+            .collect()
     }
 
-    pub fn get_rows(&self, shift_right: usize) -> Vec<Vec<String>> {
-        self.categories
-            .iter()
-            .map(|category| {
-                let mut row = vec![format!("\n{}\n", category)];
-                row.extend(
-                    self.months
-                        .iter()
-                        .skip(shift_right)
-                        .map(|month| {
-                            format!(
-                                "\n{:02.2}\n",
-                                self.category_summary
-                                    .get(&(category.clone(), *month))
-                                    .unwrap_or(&0.0)
-                            )
-                        })
-                        .collect::<Vec<String>>(),
-                );
-                row
-            })
-            .collect()
+    pub fn get_month_at_index(&self, index: usize) -> Option<&MonthInYear> {
+        self.months.get(index)
+    }
+
+    pub fn get_categories_for_month_by_index(&self, index: usize) -> Vec<String> {
+        if let Some(month) = self.get_month_at_index(index) {
+            self.categories
+                .iter()
+                .filter_map(|category| {
+                    self.category_summary
+                        .get(&(category.clone(), *month))
+                        .map(|_| category.to_string())
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn get_category_rows_for_month_by_index(&self, index: usize) -> Vec<Vec<String>> {
+        if let Some(month) = self.get_month_at_index(index) {
+            self.categories
+                .iter()
+                .map(|category| {
+                    self.category_summary
+                        .get(&(category.clone(), *month))
+                        .map(|sum| (category, sum))
+                })
+                .filter_map(|category_sum| category_sum)
+                .map(|category_sum| {
+                    vec![
+                        format!("\n{}\n", category_sum.0),
+                        format!("\n{:02.2}\n", category_sum.1),
+                    ]
+                })
+                .collect()
+        } else {
+            vec![]
+        }
     }
 }
 
