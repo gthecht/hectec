@@ -2,8 +2,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style, Stylize},
-    text::Text,
-    widgets::{Cell, HighlightSpacing, Row, Table, TableState},
+    text::{Line, Text},
+    widgets::{
+        Bar, BarChart, BarGroup, Block, Cell, HighlightSpacing, Paragraph, Row, Table, TableState,
+    },
     Frame,
 };
 
@@ -128,15 +130,16 @@ impl ReportPage {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        let vertical = &Layout::horizontal([
+        let layout = &Layout::horizontal([
             Constraint::Length(15),
             Constraint::Min(30),
             Constraint::Length(50),
         ]);
-        let rects = vertical.split(area);
+        let rects = layout.split(area);
 
         self.render_months(frame, rects[0], colors);
         self.render_categories(frame, rects[2], colors);
+        self.render_barchart(frame, rects[1], colors);
     }
 
     fn render_months(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
@@ -185,5 +188,39 @@ impl ReportPage {
         let widths = vec![25, 10];
         let t = add_design_to_table(Table::new(rows, widths), header, colors);
         frame.render_stateful_widget(t, area, &mut self.categories_table_state);
+    }
+
+    fn render_barchart(&self, frame: &mut Frame, area: Rect, colors: &TableColors) {
+        let [header_rect, space, bar_rect] = Layout::vertical([
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Min(3),
+        ])
+        .areas(area);
+        let header = Paragraph::new(vec![Line::from(""), Line::from("bar graph - replace me")])
+            .bg(colors.header_bg);
+        frame.render_widget(header, header_rect);
+
+        frame.render_widget(Block::new().bg(colors.normal_row_color), space);
+
+        let temperatures: Vec<u8> = (0..24).map(|i| 50 - 2 * i).collect();
+        let bars: Vec<Bar> = temperatures
+            .into_iter()
+            .map(|value| Self::horizontal_bar(value, colors))
+            .collect();
+        let barchart = BarChart::default()
+            .data(BarGroup::default().bars(&bars))
+            .bg(colors.normal_row_color)
+            .bar_width(1)
+            .bar_gap(2)
+            .direction(ratatui::layout::Direction::Horizontal);
+        frame.render_widget(barchart, bar_rect);
+    }
+
+    fn horizontal_bar(length: u8, colors: &TableColors) -> Bar {
+        Bar::default()
+            .value(u64::from(length))
+            .style(colors.selected_column_style_fg)
+            .value_style(colors.row_fg)
     }
 }
