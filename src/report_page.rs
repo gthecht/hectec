@@ -130,25 +130,27 @@ impl ReportPage {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        let layout = &Layout::horizontal([
-            Constraint::Length(15),
-            Constraint::Min(30),
-            Constraint::Length(50),
-        ]);
+        let layout = &Layout::horizontal([Constraint::Min(45), Constraint::Length(50)]);
         let rects = layout.split(area);
 
         self.render_months(frame, rects[0], colors);
-        self.render_categories(frame, rects[2], colors);
-        self.render_barchart(frame, rects[1], colors);
+        self.render_categories(frame, rects[1], colors);
     }
 
     fn render_months(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        let header = Row::new(vec!["\nDates"]);
+        let date_width = 10;
+        let bar_max_width = area.as_size().width - date_width - 2;
+        let header = Row::new(vec!["\nDates", "\nBar graph - replace me"]);
+        let month_index = self.months_table_state.selected().unwrap_or(0);
+        let category_index = self.categories_table_state.selected().unwrap_or(0);
+        let category = self
+            .report
+            .get_category_by_index_for_month_at_index(month_index, category_index);
         let rows = self
             .report
-            .get_months()
+            .get_month_rows(category)
             .into_iter()
-            .map(|name| vec![name])
+            .map(|(month, value)| vec![month, format!("\n{} - {:02.2}", bar_max_width, value)])
             .enumerate()
             .map(|(i, row)| {
                 let color = match i % 2 {
@@ -160,7 +162,7 @@ impl ReportPage {
                 row.style(Style::new().fg(colors.row_fg).bg(color))
                     .height(3)
             });
-        let widths = vec![15];
+        let widths = vec![date_width, bar_max_width + 2];
         let t = add_design_to_table(Table::new(rows, widths), header, colors);
         frame.render_stateful_widget(t, area, &mut self.months_table_state);
     }

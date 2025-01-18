@@ -326,10 +326,19 @@ impl TransactionsReport {
         self.months.len()
     }
 
-    pub fn get_months(&self) -> Vec<String> {
+    pub fn get_month_rows(&self, category: Option<String>) -> Vec<(String, f64)> {
         self.months
             .iter()
-            .map(|(year, month)| format!("\n{:04}.{:02}", year, month))
+            .map(|month| {
+                let month_str = format!("\n{:04}.{:02}", month.0, month.1);
+                let category_amount: f64 = category.as_ref().map_or(0.0, |c| {
+                    *self
+                        .category_summary
+                        .get(&(c.clone(), *month))
+                        .unwrap_or(&0.0)
+                });
+                (month_str, category_amount)
+            })
             .collect()
     }
 
@@ -350,6 +359,17 @@ impl TransactionsReport {
         } else {
             vec![]
         }
+    }
+
+    pub fn get_category_by_index_for_month_at_index(
+        &self,
+        month_index: usize,
+        category_index: usize,
+    ) -> Option<String> {
+        let categories = self.get_categories_for_month_by_index(month_index);
+        categories
+            .get(category_index)
+            .map(|category| category.clone())
     }
 
     pub fn get_category_rows_for_month_by_index(&self, index: usize) -> Vec<Vec<String>> {
