@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     table_design::add_design_to_table,
-    transaction::{MonthInYear, TransactionField, TransactionsTable},
+    transaction::{DirectionAndCategory, MonthInYear, TransactionField, TransactionsTable},
     TableColors,
 };
 
@@ -43,7 +43,7 @@ impl InputPage {
     pub fn initialize_table(&mut self) -> Result<()> {
         self.transactions_table.load()?;
         self.last_row();
-        self.next_column();
+        self.select_first_column();
         Ok(())
     }
 
@@ -111,12 +111,12 @@ impl InputPage {
         self.update_selected(i);
     }
 
-    fn last_row(&mut self) {
+    pub fn last_row(&mut self) {
         let i = self.transactions_table.len() - 1;
         self.update_selected(i);
     }
 
-    fn select_first_column(&mut self) {
+    pub fn select_first_column(&mut self) {
         self.table_state.select_column(Some(0));
     }
 
@@ -254,7 +254,7 @@ impl InputPage {
         let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
         let rects = vertical.split(area);
 
-        self.render_table(frame, rects[0], colors, true, (None, None));
+        self.render_table(frame, rects[0], colors, true, ((None, None), None));
         self.render_edit_bar(frame, rects[1], colors);
         let cursor_y = rects[1].as_position().y + 1;
         frame.set_cursor_position(Position::new(self.character_index as u16 + 1, cursor_y))
@@ -266,7 +266,7 @@ impl InputPage {
         area: Rect,
         colors: &TableColors,
         highlight_selected: bool,
-        filter: (Option<String>, Option<&MonthInYear>),
+        filter: (DirectionAndCategory, Option<&MonthInYear>),
     ) {
         let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
 
@@ -280,14 +280,21 @@ impl InputPage {
             .transactions_table
             .iter()
             .filter(|transaction| {
-                filter
+                let dir_matches = filter
                     .0
+                     .0
                     .as_ref()
-                    .map_or(true, |category| transaction.category == *category)
-                    && filter.1.as_ref().map_or(true, |month_in_year| {
-                        transaction.date.year == month_in_year.0
-                            && transaction.date.month == month_in_year.1
-                    })
+                    .map_or(true, |d| &transaction.direction == d);
+                let ctg_matches = filter
+                    .0
+                     .1
+                    .as_ref()
+                    .map_or(true, |c| &transaction.category == c);
+                let date_matches = filter.1.as_ref().map_or(true, |month_in_year| {
+                    transaction.date.year == month_in_year.0
+                        && transaction.date.month == month_in_year.1
+                });
+                dir_matches && ctg_matches && date_matches
             })
             .enumerate()
             .map(|(i, transaction)| {

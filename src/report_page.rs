@@ -8,13 +8,13 @@ use ratatui::{
 
 use crate::{
     table_design::add_design_to_table,
-    transaction::{MonthInYear, TransactionsReport},
+    transaction::{DirectionAndCategory, MonthInYear, TransactionsReport},
     TableColors,
 };
 
 pub struct ReportPage {
     report: TransactionsReport,
-    selected_category: Option<String>,
+    selected_category: DirectionAndCategory,
     months_table_state: TableState,
     categories_table_state: TableState,
 }
@@ -23,7 +23,7 @@ impl ReportPage {
     pub fn new() -> Self {
         ReportPage {
             report: TransactionsReport::new(&vec![]),
-            selected_category: None,
+            selected_category: (None, None),
             months_table_state: TableState::default().with_selected(0),
             categories_table_state: TableState::default(),
         }
@@ -76,19 +76,19 @@ impl ReportPage {
                 self.report
                     .get_category_by_index_for_month_at_index(month_index, index)
             })
-            .flatten();
+            .unwrap_or((None, None));
     }
 
     fn set_category_index(&mut self) {
-        if self.selected_category == None {
+        if self.selected_category == (None, None) {
             return;
         }
         // else look for the category in the current month's categories and set the index to that or None
         let month_index = self.months_table_state.selected().unwrap_or(0);
         let month_categories = self.report.get_categories_for_month_by_index(month_index);
-        let category_index = month_categories
-            .iter()
-            .position(|c| Some(c) == self.selected_category.as_ref());
+        let category_index = month_categories.iter().position(|(dir, ctg)| {
+            (&self.selected_category.0 == dir) && (&self.selected_category.1 == ctg)
+        });
         Self::update_selected(&mut self.categories_table_state, category_index);
     }
 
@@ -138,7 +138,7 @@ impl ReportPage {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        let layout = &Layout::horizontal([Constraint::Length(24), Constraint::Min(42)]);
+        let layout = &Layout::horizontal([Constraint::Length(32), Constraint::Min(42)]);
         let rects = layout.split(area);
 
         self.render_months(frame, rects[0], colors);
@@ -147,12 +147,18 @@ impl ReportPage {
 
     fn render_months(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let date_width = 10;
-        let amount_width = 12;
+        let amount_width = 20;
         let header = Row::new(vec![
             "Dates".to_string(),
             format!(
-                "{}",
-                self.selected_category.clone().unwrap_or("".to_string())
+                "{}-{}",
+                self.selected_category
+                    .0
+                    .clone()
+                    .map(|dir| dir.chars().next())
+                    .flatten()
+                    .unwrap_or('*'),
+                self.selected_category.1.clone().unwrap_or("*".to_string())
             ),
         ]);
         let rows = self
@@ -203,7 +209,7 @@ impl ReportPage {
         frame.render_stateful_widget(t, area, &mut self.categories_table_state);
     }
 
-    pub(crate) fn get_category_and_month(&self) -> (Option<String>, Option<&MonthInYear>) {
+    pub(crate) fn get_category_and_month(&self) -> (DirectionAndCategory, Option<&MonthInYear>) {
         (
             self.selected_category.clone(),
             self.months_table_state

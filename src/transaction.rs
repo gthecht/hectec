@@ -167,7 +167,7 @@ pub struct Transaction {
     pub details: String,
     pub category: String,
     method: String,
-    direction: String,
+    pub direction: String,
     currency: String,
 }
 
@@ -287,38 +287,47 @@ pub type MonthInYear = (
     u8,  //month
 );
 
-type SummaryMap = HashMap<(String, MonthInYear), f64>;
+pub type DirectionAndCategory = (Option<String>, Option<String>);
+type SummaryMap = HashMap<(DirectionAndCategory, MonthInYear), f64>;
 
 const DEFAULT_CURRENCY: &str = "ILS";
 
 pub struct TransactionsReport {
     pub months: Vec<MonthInYear>,
-    categories: Vec<String>,
+    categories: Vec<DirectionAndCategory>,
     category_summary: SummaryMap,
 }
 
 impl TransactionsReport {
     pub fn new(transactions: &Vec<Transaction>) -> Self {
         let mut months: HashSet<MonthInYear> = HashSet::new();
-        let mut categories: HashSet<String> = HashSet::new();
+        let mut categories: HashSet<DirectionAndCategory> = HashSet::new();
         let mut category_summary: SummaryMap = HashMap::default();
         transactions.iter().for_each(|transaction| {
             if transaction.currency == DEFAULT_CURRENCY {
                 let month_in_year = (transaction.date.year, transaction.date.month);
-                let category = format!("{} - {}", transaction.direction, transaction.category);
                 months.insert(month_in_year);
-                categories.insert(category.clone());
-                categories.insert(transaction.direction.clone());
+                categories.insert((
+                    Some(transaction.direction.clone()),
+                    Some(transaction.category.clone()),
+                ));
+                categories.insert((Some(transaction.direction.clone()), None));
                 *category_summary
-                    .entry((category, month_in_year))
+                    .entry((
+                        (
+                            Some(transaction.direction.clone()),
+                            Some(transaction.category.clone()),
+                        ),
+                        month_in_year,
+                    ))
                     .or_insert(0.0) += transaction.amount;
                 *category_summary
-                    .entry((transaction.direction.clone(), month_in_year))
+                    .entry(((Some(transaction.direction.clone()), None), month_in_year))
                     .or_insert(0.0) += transaction.amount;
             }
         });
         let months: Vec<MonthInYear> = months.into_iter().sorted().rev().collect();
-        let categories: Vec<String> = categories.into_iter().sorted().collect();
+        let categories: Vec<DirectionAndCategory> = categories.into_iter().sorted().collect();
         TransactionsReport {
             months,
             categories,
@@ -330,17 +339,18 @@ impl TransactionsReport {
         self.months.len()
     }
 
-    pub fn get_month_rows(&self, category: &Option<String>) -> Vec<(String, f64)> {
+    pub fn get_month_rows(
+        &self,
+        direction_and_category: &DirectionAndCategory,
+    ) -> Vec<(String, f64)> {
         self.months
             .iter()
             .map(|month| {
                 let month_str = format!("\n{:04}.{:02}", month.0, month.1);
-                let category_amount: f64 = category.as_ref().map_or(0.0, |c| {
-                    *self
-                        .category_summary
-                        .get(&(c.clone(), *month))
-                        .unwrap_or(&0.0)
-                });
+                let category_amount: f64 = *self
+                    .category_summary
+                    .get(&(direction_and_category.clone(), *month))
+                    .unwrap_or(&0.0);
                 (month_str, category_amount)
             })
             .collect()
@@ -351,15 +361,16 @@ impl TransactionsReport {
     }
 
     /** Returns a vector of categories that have a non-0 value for the given month */
-    pub fn get_categories_for_month_by_index(&self, index: usize) -> Vec<String> {
+    pub fn get_categories_for_month_by_index(&self, index: usize) -> Vec<DirectionAndCategory> {
         if let Some(month) = self.get_month_at_index(index) {
             self.categories
                 .iter()
-                .filter_map(|category| {
+                .filter(|direction_and_category| {
                     self.category_summary
-                        .get(&(category.clone(), *month))
-                        .map(|_| category.to_string())
+                        .get(&((*direction_and_category).clone(), *month))
+                        .map_or(false, |amount| amount != &0.0)
                 })
+                .map(|dac| dac.clone())
                 .collect()
         } else {
             vec![]
@@ -371,27 +382,37 @@ impl TransactionsReport {
         &self,
         month_index: usize,
         category_index: usize,
-    ) -> Option<String> {
+    ) -> DirectionAndCategory {
         let categories = self.get_categories_for_month_by_index(month_index);
         categories
             .get(category_index)
-            .map(|category| category.clone())
+            .map_or((None, None), |category| category.clone())
     }
 
     pub fn get_category_rows_for_month_by_index(&self, index: usize) -> Vec<Vec<String>> {
         if let Some(month) = self.get_month_at_index(index) {
             self.categories
                 .iter()
-                .map(|category| {
+                .map(|direction_and_category| {
                     self.category_summary
-                        .get(&(category.clone(), *month))
-                        .map(|sum| (category, sum))
+                        .get(&(direction_and_category.clone(), *month))
+                        .map(|sum| (direction_and_category, sum))
                 })
                 .filter_map(|category_sum| category_sum)
-                .map(|category_sum| {
+                .map(|(direction_and_category, sum)| {
                     vec![
-                        format!("\n{}\n", category_sum.0),
-                        format!("\n{:02.2}\n", category_sum.1),
+                        format!(
+                            "\n{} - {}",
+                            direction_and_category
+                                .0
+                                .as_ref()
+                                .unwrap_or(&"*".to_string()),
+                            direction_and_category
+                                .1
+                                .as_ref()
+                                .unwrap_or(&"*".to_string())
+                        ),
+                        format!("\n{:02.2}\n", sum),
                     ]
                 })
                 .collect()

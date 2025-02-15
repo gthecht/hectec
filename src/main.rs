@@ -131,7 +131,13 @@ impl App {
                 KeyCode::Char('h') if ctrl_pressed => self.instructions.toggle(),
                 KeyCode::Char('r') if ctrl_pressed => {
                     self.showing_page.toggle();
-                    self.reload_report();
+                    match self.showing_page {
+                        Page::Input => {
+                            self.input_page.last_row();
+                            self.input_page.select_first_column();
+                        }
+                        Page::Report => self.reload_report(),
+                    }
                 }
                 _ => match self.showing_page {
                     Page::Input => self.input_page.handle_key_events(key),
