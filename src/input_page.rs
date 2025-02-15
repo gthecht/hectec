@@ -2,16 +2,14 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
-    style::{palette::tailwind, Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{
-        Block, BorderType, Cell, HighlightSpacing, Paragraph, Row, ScrollbarState, Table,
-        TableState,
-    },
+    style::{palette::tailwind, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Cell, Paragraph, Row, ScrollbarState, Table, TableState},
     Frame,
 };
 
 use crate::{
+    table_design::add_design_to_table,
     transaction::{TransactionField, TransactionsTable},
     TableColors,
 };
@@ -264,13 +262,6 @@ impl InputPage {
 
     fn render_table(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
-        let selected_row_style = Style::default()
-            .add_modifier(Modifier::REVERSED)
-            .fg(colors.selected_row_style_fg);
-        let selected_col_style = Style::default().fg(colors.selected_column_style_fg);
-        let selected_cell_style = Style::default()
-            .add_modifier(Modifier::REVERSED)
-            .fg(colors.selected_cell_style_fg);
 
         let header = TransactionField::names()
             .into_iter()
@@ -291,15 +282,7 @@ impl InputPage {
                 row.style(Style::new().fg(colors.row_fg).bg(color))
                     .height(3)
             });
-        let bar = " █ ";
-        let t = Table::new(rows, TransactionField::widths())
-            .header(header)
-            .row_highlight_style(selected_row_style)
-            .column_highlight_style(selected_col_style)
-            .cell_highlight_style(selected_cell_style)
-            .highlight_symbol(Text::from(vec!["".into(), bar.into(), "".into()]))
-            .bg(colors.buffer_bg)
-            .highlight_spacing(HighlightSpacing::Always);
+        let t = add_design_to_table(Table::new(rows, TransactionField::widths()), header, colors);
         frame.render_stateful_widget(t, area, &mut self.table_state);
     }
 

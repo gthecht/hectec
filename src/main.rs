@@ -2,6 +2,7 @@ mod input_page;
 mod instructions;
 mod logger;
 mod report_page;
+mod table_design;
 mod transaction;
 use std::env;
 use std::path::PathBuf;
