@@ -308,8 +308,12 @@ impl TransactionsReport {
                 let category = format!("{} - {}", transaction.direction, transaction.category);
                 months.insert(month_in_year);
                 categories.insert(category.clone());
+                categories.insert(transaction.direction.clone());
                 *category_summary
                     .entry((category, month_in_year))
+                    .or_insert(0.0) += transaction.amount;
+                *category_summary
+                    .entry((transaction.direction.clone(), month_in_year))
                     .or_insert(0.0) += transaction.amount;
             }
         });
@@ -326,7 +330,7 @@ impl TransactionsReport {
         self.months.len()
     }
 
-    pub fn get_month_rows(&self, category: Option<String>) -> Vec<(String, f64)> {
+    pub fn get_month_rows(&self, category: &Option<String>) -> Vec<(String, f64)> {
         self.months
             .iter()
             .map(|month| {
@@ -346,6 +350,7 @@ impl TransactionsReport {
         self.months.get(index)
     }
 
+    /** Returns a vector of categories that have a non-0 value for the given month */
     pub fn get_categories_for_month_by_index(&self, index: usize) -> Vec<String> {
         if let Some(month) = self.get_month_at_index(index) {
             self.categories
@@ -361,6 +366,7 @@ impl TransactionsReport {
         }
     }
 
+    /** Returns the category label for a month index and a category index */
     pub fn get_category_by_index_for_month_at_index(
         &self,
         month_index: usize,

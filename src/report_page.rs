@@ -31,6 +31,7 @@ fn add_design_to_table<'a>(table: Table<'a>, header: Row<'a>, colors: &TableColo
 
 pub struct ReportPage {
     report: TransactionsReport,
+    selected_category: Option<String>,
     months_table_state: TableState,
     categories_table_state: TableState,
 }
@@ -39,8 +40,9 @@ impl ReportPage {
     pub fn new() -> Self {
         ReportPage {
             report: TransactionsReport::new(&vec![]),
+            selected_category: None,
             months_table_state: TableState::default().with_selected(0),
-            categories_table_state: TableState::default().with_selected(0),
+            categories_table_state: TableState::default(),
         }
     }
 
@@ -48,8 +50,8 @@ impl ReportPage {
         self.report = report;
     }
 
-    fn update_selected(table_state: &mut TableState, i: usize) {
-        table_state.select(Some(i));
+    fn update_selected(table_state: &mut TableState, i: Option<usize>) {
+        table_state.select(i);
     }
 
     fn next_row(table_state: &mut TableState, rows_len: usize) {
@@ -63,7 +65,7 @@ impl ReportPage {
             }
             None => 0,
         };
-        Self::update_selected(table_state, i);
+        Self::update_selected(table_state, Some(i));
     }
 
     fn previous_row(table_state: &mut TableState) {
@@ -77,17 +79,41 @@ impl ReportPage {
             }
             None => 0,
         };
-        Self::update_selected(table_state, i);
+        Self::update_selected(table_state, Some(i));
     }
 
     fn first_row(table_state: &mut TableState) {
         let i = 0;
-        Self::update_selected(table_state, i);
+        Self::update_selected(table_state, Some(i));
     }
 
     fn last_row(table_state: &mut TableState, rows_len: usize) {
         let i = rows_len - 1;
-        Self::update_selected(table_state, i);
+        Self::update_selected(table_state, Some(i));
+    }
+
+    fn set_selected_category(&mut self) {
+        let month_index = self.months_table_state.selected().unwrap_or(0);
+        let category_index = self.categories_table_state.selected();
+        self.selected_category = category_index
+            .map(|index| {
+                self.report
+                    .get_category_by_index_for_month_at_index(month_index, index)
+            })
+            .flatten();
+    }
+
+    fn set_category_index(&mut self) {
+        if self.selected_category == None {
+            return;
+        }
+        // else look for the category in the current month's categories and set the index to that or None
+        let month_index = self.months_table_state.selected().unwrap_or(0);
+        let month_categories = self.report.get_categories_for_month_by_index(month_index);
+        let category_index = month_categories
+            .iter()
+            .position(|c| Some(c) == self.selected_category.as_ref());
+        Self::update_selected(&mut self.categories_table_state, category_index);
     }
 
     pub fn handle_key_events(&mut self, key: KeyEvent) {
@@ -100,27 +126,35 @@ impl ReportPage {
             match key.code {
                 KeyCode::Down => {
                     Self::next_row(&mut self.months_table_state, number_of_months);
-                    Self::first_row(&mut self.categories_table_state);
+                    self.set_category_index();
                 }
                 KeyCode::Up => {
                     Self::previous_row(&mut self.months_table_state);
-                    Self::first_row(&mut self.categories_table_state);
+                    self.set_category_index();
                 }
                 KeyCode::PageUp => {
                     Self::first_row(&mut self.months_table_state);
-                    Self::first_row(&mut self.categories_table_state);
+                    self.set_category_index();
                 }
                 KeyCode::PageDown => {
                     Self::last_row(&mut self.months_table_state, number_of_months);
-                    Self::first_row(&mut self.categories_table_state);
+                    self.set_category_index();
                 }
                 KeyCode::Right => {
-                    Self::next_row(&mut self.categories_table_state, number_of_categories)
+                    Self::next_row(&mut self.categories_table_state, number_of_categories);
+                    self.set_selected_category();
                 }
-                KeyCode::Left => Self::previous_row(&mut self.categories_table_state),
-                KeyCode::Home => Self::first_row(&mut self.categories_table_state),
+                KeyCode::Left => {
+                    Self::previous_row(&mut self.categories_table_state);
+                    self.set_selected_category();
+                }
+                KeyCode::Home => {
+                    Self::first_row(&mut self.categories_table_state);
+                    self.set_selected_category();
+                }
                 KeyCode::End => {
-                    Self::last_row(&mut self.categories_table_state, number_of_categories)
+                    Self::last_row(&mut self.categories_table_state, number_of_categories);
+                    self.set_selected_category();
                 }
                 _ => {}
             }
@@ -129,8 +163,10 @@ impl ReportPage {
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let layout = &Layout::horizontal([
-            Constraint::Length(45),
-            Constraint::Min(3),
+            Constraint::Length(50),
+            Constraint::Length(3),
+            Constraint::Length(50),
+            Constraint::Length(3),
             Constraint::Length(50),
         ]);
         let rects = layout.split(area);
@@ -141,19 +177,17 @@ impl ReportPage {
 
     fn render_months(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let date_width = 10;
-        let bar_max_width = area.as_size().width - date_width - 2;
-        let month_index = self.months_table_state.selected().unwrap_or(0);
-        let category_index = self.categories_table_state.selected().unwrap_or(0);
-        let category = self
-            .report
-            .get_category_by_index_for_month_at_index(month_index, category_index);
+        let bar_max_width = area.as_size().width.max(date_width + 4) - date_width - 2;
         let header = Row::new(vec![
             "\nDates".to_string(),
-            format!("\n{}", category.clone().unwrap_or("".to_string())),
+            format!(
+                "\n{}",
+                self.selected_category.clone().unwrap_or("".to_string())
+            ),
         ]);
         let rows = self
             .report
-            .get_month_rows(category)
+            .get_month_rows(&self.selected_category)
             .into_iter()
             .map(|(month, value)| vec![month, format!("\n{:02.2}", value)])
             .enumerate()
@@ -167,7 +201,7 @@ impl ReportPage {
                 row.style(Style::new().fg(colors.row_fg).bg(color))
                     .height(3)
             });
-        let widths = vec![date_width, bar_max_width + 2];
+        let widths = vec![date_width, bar_max_width];
         let t = add_design_to_table(Table::new(rows, widths), header, colors);
         frame.render_stateful_widget(t, area, &mut self.months_table_state);
     }
