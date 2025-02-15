@@ -166,7 +166,14 @@ impl App {
         self.render_scrollbar(frame, rects[1]);
         match self.showing_page {
             Page::Input => self.input_page.draw(frame, rects[1], &self.colors),
-            Page::Report => self.report_page.draw(frame, rects[1], &self.colors),
+            Page::Report => {
+                let layout = &Layout::horizontal([Constraint::Length(74), Constraint::Min(50)]);
+                let content_rects = layout.split(rects[1]);
+                self.report_page.draw(frame, content_rects[0], &self.colors);
+                let filter = self.report_page.get_category_and_month();
+                self.input_page
+                    .render_table(frame, content_rects[1], &self.colors, false, filter);
+            }
         }
     }
 

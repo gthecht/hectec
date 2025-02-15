@@ -6,7 +6,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::{table_design::add_design_to_table, transaction::TransactionsReport, TableColors};
+use crate::{
+    table_design::add_design_to_table,
+    transaction::{MonthInYear, TransactionsReport},
+    TableColors,
+};
 
 pub struct ReportPage {
     report: TransactionsReport,
@@ -168,7 +172,7 @@ impl ReportPage {
                     .height(3)
             });
         let widths = vec![date_width, amount_width];
-        let t = add_design_to_table(Table::new(rows, widths), header, colors);
+        let t = add_design_to_table(Table::new(rows, widths), header, colors, true);
         frame.render_stateful_widget(t, area, &mut self.months_table_state);
     }
 
@@ -195,7 +199,17 @@ impl ReportPage {
         let amount_width = 10;
         let category_width = area.as_size().width.max(amount_width + 4) - amount_width - 2;
         let widths = vec![category_width, amount_width];
-        let t = add_design_to_table(Table::new(rows, widths), header, colors);
+        let t = add_design_to_table(Table::new(rows, widths), header, colors, true);
         frame.render_stateful_widget(t, area, &mut self.categories_table_state);
+    }
+
+    pub(crate) fn get_category_and_month(&self) -> (Option<String>, Option<&MonthInYear>) {
+        (
+            self.selected_category.clone(),
+            self.months_table_state
+                .selected()
+                .map(|index| self.report.get_month_at_index(index))
+                .flatten(),
+        )
     }
 }

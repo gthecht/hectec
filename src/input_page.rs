@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     table_design::add_design_to_table,
-    transaction::{TransactionField, TransactionsTable},
+    transaction::{MonthInYear, TransactionField, TransactionsTable},
     TableColors,
 };
 
@@ -254,13 +254,20 @@ impl InputPage {
         let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
         let rects = vertical.split(area);
 
-        self.render_table(frame, rects[0], colors);
+        self.render_table(frame, rects[0], colors, true, (None, None));
         self.render_edit_bar(frame, rects[1], colors);
         let cursor_y = rects[1].as_position().y + 1;
         frame.set_cursor_position(Position::new(self.character_index as u16 + 1, cursor_y))
     }
 
-    fn render_table(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
+    pub fn render_table(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        colors: &TableColors,
+        highlight_selected: bool,
+        filter: (Option<String>, Option<&MonthInYear>),
+    ) {
         let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
 
         let header = TransactionField::names()
@@ -272,6 +279,16 @@ impl InputPage {
         let rows = self
             .transactions_table
             .iter()
+            .filter(|transaction| {
+                filter
+                    .0
+                    .as_ref()
+                    .map_or(true, |category| transaction.category == *category)
+                    && filter.1.as_ref().map_or(true, |month_in_year| {
+                        transaction.date.year == month_in_year.0
+                            && transaction.date.month == month_in_year.1
+                    })
+            })
             .enumerate()
             .map(|(i, transaction)| {
                 let color = match i % 2 {
@@ -282,7 +299,12 @@ impl InputPage {
                 row.style(Style::new().fg(colors.row_fg).bg(color))
                     .height(3)
             });
-        let t = add_design_to_table(Table::new(rows, TransactionField::widths()), header, colors);
+        let t = add_design_to_table(
+            Table::new(rows, TransactionField::widths()),
+            header,
+            colors,
+            highlight_selected,
+        );
         frame.render_stateful_widget(t, area, &mut self.table_state);
     }
 
