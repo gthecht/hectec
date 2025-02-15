@@ -2,10 +2,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style, Stylize},
-    text::{Line, Text},
-    widgets::{
-        Bar, BarChart, BarGroup, Block, Cell, HighlightSpacing, Paragraph, Row, Table, TableState,
-    },
+    text::Text,
+    widgets::{Cell, HighlightSpacing, Row, Table, TableState},
     Frame,
 };
 
@@ -130,27 +128,34 @@ impl ReportPage {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        let layout = &Layout::horizontal([Constraint::Min(45), Constraint::Length(50)]);
+        let layout = &Layout::horizontal([
+            Constraint::Length(45),
+            Constraint::Min(3),
+            Constraint::Length(50),
+        ]);
         let rects = layout.split(area);
 
         self.render_months(frame, rects[0], colors);
-        self.render_categories(frame, rects[1], colors);
+        self.render_categories(frame, rects[2], colors);
     }
 
     fn render_months(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let date_width = 10;
         let bar_max_width = area.as_size().width - date_width - 2;
-        let header = Row::new(vec!["\nDates", "\nBar graph - replace me"]);
         let month_index = self.months_table_state.selected().unwrap_or(0);
         let category_index = self.categories_table_state.selected().unwrap_or(0);
         let category = self
             .report
             .get_category_by_index_for_month_at_index(month_index, category_index);
+        let header = Row::new(vec![
+            "\nDates".to_string(),
+            format!("\n{}", category.clone().unwrap_or("".to_string())),
+        ]);
         let rows = self
             .report
             .get_month_rows(category)
             .into_iter()
-            .map(|(month, value)| vec![month, format!("\n{} - {:02.2}", bar_max_width, value)])
+            .map(|(month, value)| vec![month, format!("\n{:02.2}", value)])
             .enumerate()
             .map(|(i, row)| {
                 let color = match i % 2 {
@@ -190,39 +195,5 @@ impl ReportPage {
         let widths = vec![25, 10];
         let t = add_design_to_table(Table::new(rows, widths), header, colors);
         frame.render_stateful_widget(t, area, &mut self.categories_table_state);
-    }
-
-    fn render_barchart(&self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        let [header_rect, space, bar_rect] = Layout::vertical([
-            Constraint::Length(2),
-            Constraint::Length(1),
-            Constraint::Min(3),
-        ])
-        .areas(area);
-        let header = Paragraph::new(vec![Line::from(""), Line::from("bar graph - replace me")])
-            .bg(colors.header_bg);
-        frame.render_widget(header, header_rect);
-
-        frame.render_widget(Block::new().bg(colors.normal_row_color), space);
-
-        let temperatures: Vec<u8> = (0..24).map(|i| 50 - 2 * i).collect();
-        let bars: Vec<Bar> = temperatures
-            .into_iter()
-            .map(|value| Self::horizontal_bar(value, colors))
-            .collect();
-        let barchart = BarChart::default()
-            .data(BarGroup::default().bars(&bars))
-            .bg(colors.normal_row_color)
-            .bar_width(1)
-            .bar_gap(2)
-            .direction(ratatui::layout::Direction::Horizontal);
-        frame.render_widget(barchart, bar_rect);
-    }
-
-    fn horizontal_bar(length: u8, colors: &TableColors) -> Bar {
-        Bar::default()
-            .value(u64::from(length))
-            .style(colors.selected_column_style_fg)
-            .value_style(colors.row_fg)
     }
 }
