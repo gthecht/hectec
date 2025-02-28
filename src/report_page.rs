@@ -24,7 +24,7 @@ impl ReportPage {
         ReportPage {
             report: TransactionsReport::new(&vec![]),
             selected_category: (None, None),
-            months_table_state: TableState::default().with_selected(0),
+            months_table_state: TableState::default(),
             categories_table_state: TableState::default(),
         }
     }
@@ -92,7 +92,7 @@ impl ReportPage {
         Self::update_selected(&mut self.categories_table_state, category_index);
     }
 
-    pub fn handle_key_events(&mut self, key: KeyEvent) {
+    pub fn handle_key_events(&mut self, key: KeyEvent) -> Option<()> {
         if key.kind == KeyEventKind::Press {
             let number_of_months = self.report.rows_len();
             let number_of_categories = self
@@ -132,9 +132,10 @@ impl ReportPage {
                     Self::last_row(&mut self.categories_table_state, number_of_categories);
                     self.set_selected_category();
                 }
-                _ => {}
+                _ => return None,
             }
         }
+        Some(())
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
@@ -178,7 +179,7 @@ impl ReportPage {
                     .height(3)
             });
         let widths = vec![date_width, amount_width];
-        let t = add_design_to_table(Table::new(rows, widths), header, colors, true);
+        let t = add_design_to_table(Table::new(rows, widths), header, colors);
         frame.render_stateful_widget(t, area, &mut self.months_table_state);
     }
 
@@ -205,17 +206,18 @@ impl ReportPage {
         let amount_width = 10;
         let category_width = area.as_size().width.max(amount_width + 4) - amount_width - 2;
         let widths = vec![category_width, amount_width];
-        let t = add_design_to_table(Table::new(rows, widths), header, colors, true);
+        let t = add_design_to_table(Table::new(rows, widths), header, colors);
         frame.render_stateful_widget(t, area, &mut self.categories_table_state);
     }
 
-    pub(crate) fn get_category_and_month(&self) -> (DirectionAndCategory, Option<&MonthInYear>) {
+    pub(crate) fn get_report_filter(&self) -> (DirectionAndCategory, Option<MonthInYear>) {
         (
             self.selected_category.clone(),
             self.months_table_state
                 .selected()
                 .map(|index| self.report.get_month_at_index(index))
-                .flatten(),
+                .flatten()
+                .cloned(),
         )
     }
 }

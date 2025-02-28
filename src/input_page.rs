@@ -40,10 +40,15 @@ impl InputPage {
         }
     }
 
-    pub fn initialize_table(&mut self) -> Result<()> {
-        self.transactions_table.load()?;
+    pub fn reset_table(&mut self, filter: (DirectionAndCategory, Option<MonthInYear>)) {
+        self.transactions_table.set_filter(filter);
         self.last_row();
         self.select_first_column();
+    }
+
+    pub fn initialize_table(&mut self) -> Result<()> {
+        self.transactions_table.load()?;
+        self.reset_table(((None, None), None));
         Ok(())
     }
 
@@ -59,9 +64,9 @@ impl InputPage {
         }
     }
 
-    fn update_selected(&mut self, i: usize) {
-        self.table_state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i * 4); // each row is of height 4
+    fn update_selected(&mut self, i: Option<usize>) {
+        self.table_state.select(i);
+        self.scroll_state = self.scroll_state.position(i.map_or(0, |i| i * 4)); // each row is of height 4
         self.update_editing_text();
     }
 
@@ -72,52 +77,51 @@ impl InputPage {
     }
 
     fn next_row(&mut self, add_new_row_if_end: ShouldAddNewRow) {
-        let i = match self.table_state.selected() {
-            Some(i) => {
-                if i >= self.transactions_table.len() - 1 {
-                    match add_new_row_if_end {
-                        ShouldAddNewRow::Yes => {
-                            self.transactions_table.new_transaction();
-                            self.update_selected(self.transactions_table.len() - 1);
+        let i = self
+            .table_state
+            .selected()
+            .map(|i| {
+                self.transactions_table.filtered_len().checked_sub(1).map(
+                    |last_transaction_index| {
+                        if i >= last_transaction_index {
+                            match add_new_row_if_end {
+                                ShouldAddNewRow::Yes => {
+                                    self.transactions_table.new_transaction();
+                                    last_transaction_index + 1
+                                }
+                                ShouldAddNewRow::No => last_transaction_index,
+                            }
+                        } else {
+                            i + 1
                         }
-                        ShouldAddNewRow::No => {}
-                    }
-                    self.transactions_table.len() - 1
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
+                    },
+                )
+            })
+            .flatten();
         self.update_selected(i);
     }
 
     fn previous_row(&mut self) {
-        let i = match self.table_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    0
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
+        let i = self
+            .table_state
+            .selected()
+            .map(|i| if i == 0 { 0 } else { i - 1 });
         self.update_selected(i);
     }
 
     fn first_row(&mut self) {
-        let i = 0;
+        let i = Some(0);
         self.update_selected(i);
     }
 
     pub fn last_row(&mut self) {
-        let i = self.transactions_table.len() - 1;
+        let i = self.transactions_table.filtered_len().checked_sub(1);
         self.update_selected(i);
     }
 
     pub fn select_first_column(&mut self) {
         self.table_state.select_column(Some(0));
+        self.update_editing_text();
     }
 
     fn next_column(&mut self) {
@@ -254,20 +258,17 @@ impl InputPage {
         let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
         let rects = vertical.split(area);
 
-        self.render_table(frame, rects[0], colors, true, ((None, None), None));
+        self.render_table(frame, rects[0], colors);
         self.render_edit_bar(frame, rects[1], colors);
         let cursor_y = rects[1].as_position().y + 1;
-        frame.set_cursor_position(Position::new(self.character_index as u16 + 1, cursor_y))
+        let cursor_x = rects[1].as_position().x + 1;
+        frame.set_cursor_position(Position::new(
+            cursor_x + self.character_index as u16,
+            cursor_y,
+        ))
     }
 
-    pub fn render_table(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        colors: &TableColors,
-        highlight_selected: bool,
-        filter: (DirectionAndCategory, Option<&MonthInYear>),
-    ) {
+    pub fn render_table(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
 
         let header = TransactionField::names()
@@ -278,24 +279,7 @@ impl InputPage {
             .height(1);
         let rows = self
             .transactions_table
-            .iter()
-            .filter(|transaction| {
-                let dir_matches = filter
-                    .0
-                     .0
-                    .as_ref()
-                    .map_or(true, |d| &transaction.direction == d);
-                let ctg_matches = filter
-                    .0
-                     .1
-                    .as_ref()
-                    .map_or(true, |c| &transaction.category == c);
-                let date_matches = filter.1.as_ref().map_or(true, |month_in_year| {
-                    transaction.date.year == month_in_year.0
-                        && transaction.date.month == month_in_year.1
-                });
-                dir_matches && ctg_matches && date_matches
-            })
+            .filtered_transactions()
             .enumerate()
             .map(|(i, transaction)| {
                 let color = match i % 2 {
@@ -306,12 +290,7 @@ impl InputPage {
                 row.style(Style::new().fg(colors.row_fg).bg(color))
                     .height(3)
             });
-        let t = add_design_to_table(
-            Table::new(rows, TransactionField::widths()),
-            header,
-            colors,
-            highlight_selected,
-        );
+        let t = add_design_to_table(Table::new(rows, TransactionField::widths()), header, colors);
         frame.render_stateful_widget(t, area, &mut self.table_state);
     }
 

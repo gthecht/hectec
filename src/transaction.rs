@@ -14,7 +14,6 @@ use std::{
     fmt::Display,
     fs,
     path::PathBuf,
-    slice::Iter,
     str::FromStr,
 };
 use time::{Date, Month};
@@ -184,26 +183,34 @@ impl Transaction {
         }
     }
 
-    pub fn mutate_field(&mut self, field_index: usize, input: &str) -> Result<(), String> {
-        match TransactionField::get(field_index) {
-            Some(field) => match field {
-                TransactionField::Date => match SimpleDate::try_from(input) {
-                    Ok(date) => self.date = date,
-                    Err(e) => return Err(format!(" failed to parse as date: {}", e)),
-                },
-                TransactionField::Amount => match f64::from_str(input) {
-                    Ok(num) => self.amount = num,
-                    Err(e) => return Err(format!(" failed to parse as number: {}", e)),
-                },
-                TransactionField::Details => self.details = input.to_string(),
-                TransactionField::Category => self.category = input.to_string(),
-                TransactionField::Method => self.method = input.to_string(),
-                TransactionField::Direction => self.direction = input.to_string(),
-                TransactionField::Currency => self.currency = input.to_string(),
+    fn mutate_field_by_transaction_field(
+        &mut self,
+        field: TransactionField,
+        input: &str,
+    ) -> Result<(), String> {
+        match field {
+            TransactionField::Date => match SimpleDate::try_from(input) {
+                Ok(date) => self.date = date,
+                Err(e) => return Err(format!(" failed to parse as date: {}", e)),
             },
-            None => {}
+            TransactionField::Amount => match f64::from_str(input) {
+                Ok(num) => self.amount = num,
+                Err(e) => return Err(format!(" failed to parse as number: {}", e)),
+            },
+            TransactionField::Details => self.details = input.to_string(),
+            TransactionField::Category => self.category = input.to_string(),
+            TransactionField::Method => self.method = input.to_string(),
+            TransactionField::Direction => self.direction = input.to_string(),
+            TransactionField::Currency => self.currency = input.to_string(),
         }
         Ok(())
+    }
+
+    pub fn mutate_field(&mut self, field_index: usize, input: &str) -> Result<(), String> {
+        match TransactionField::get(field_index) {
+            Some(field) => self.mutate_field_by_transaction_field(field, input),
+            None => Ok(()),
+        }
     }
 
     fn get_field_text(&self, field: &TransactionField) -> String {
@@ -427,6 +434,7 @@ pub struct TransactionsTable {
     recommended_input: Option<String>,
     file_path: PathBuf,
     file_type: FileType,
+    filter: (DirectionAndCategory, Option<MonthInYear>),
 }
 
 impl TransactionsTable {
@@ -437,6 +445,7 @@ impl TransactionsTable {
             recommended_input: None,
             file_path,
             file_type,
+            filter: ((None, None), None),
         }
     }
 
@@ -498,15 +507,53 @@ impl TransactionsTable {
         Ok(())
     }
 
-    pub fn new_transaction(&mut self) {
-        let last_transaction_date = self.transactions.last().unwrap().date;
-        self.transactions
-            .push(Transaction::new(last_transaction_date));
+    pub fn set_filter(&mut self, filter: (DirectionAndCategory, Option<MonthInYear>)) {
+        self.filter = filter;
     }
 
-    pub fn delete_transaction(&mut self, i: usize) {
-        if i < self.len() {
-            self.transactions.remove(i);
+    pub fn filtered_transactions(&self) -> impl Iterator<Item = &Transaction> {
+        self.transactions.iter().filter(|transaction| {
+            let dir_matches = self
+                .filter
+                .0
+                 .0
+                .as_ref()
+                .map_or(true, |d| &transaction.direction == d);
+            let ctg_matches = self
+                .filter
+                .0
+                 .1
+                .as_ref()
+                .map_or(true, |c| &transaction.category == c);
+            let date_matches = self.filter.1.as_ref().map_or(true, |month_in_year| {
+                transaction.date.year == month_in_year.0
+                    && transaction.date.month == month_in_year.1
+            });
+            dir_matches && ctg_matches && date_matches
+        })
+    }
+
+    pub fn new_transaction(&mut self) {
+        let last_transaction_date = self.filtered_transactions().last().unwrap().date;
+        let mut new_transaction = Transaction::new(last_transaction_date);
+        let (direction, category) = self.filter.0.clone();
+        if let Some(direction) = direction {
+            new_transaction
+                .mutate_field_by_transaction_field(TransactionField::Direction, direction.as_str())
+                .expect("injection into type String should always succeed");
+        }
+        if let Some(category) = category {
+            new_transaction
+                .mutate_field_by_transaction_field(TransactionField::Category, category.as_str())
+                .expect("injection into type String should always succeed");
+        }
+        self.transactions.push(new_transaction);
+    }
+
+    pub fn delete_transaction(&mut self, row: usize) {
+        let row = self.get_unfiltered_row(row);
+        if row < self.len() {
+            self.transactions.remove(row);
         }
     }
 
@@ -516,6 +563,7 @@ impl TransactionsTable {
         column: usize,
         input: &str,
     ) -> Result<(), String> {
+        let row = self.get_unfiltered_row(row);
         if let Some(transaction) = self.transactions.get_mut(row) {
             let input = self
                 .recommended_input
@@ -527,10 +575,25 @@ impl TransactionsTable {
     }
 
     pub fn get_cell_text(&mut self, row: usize, column: usize) -> Option<String> {
+        let row = self.get_unfiltered_row(row);
         self.transactions
             .get(row)
             .map(|transaction| transaction.get_column_text(column))
             .flatten()
+    }
+
+    fn get_unfiltered_row(&self, row: usize) -> usize {
+        if let Some(transaction) = self.filtered_transactions().take(row + 1).last() {
+            if let Some((row, _)) = self
+                .transactions
+                .iter()
+                .enumerate()
+                .find(|(_, t)| *t == transaction)
+            {
+                return row;
+            }
+        }
+        panic!("transaction for row number {} should exist", row);
     }
 
     fn find_recommended_transactions_by_field(
@@ -539,6 +602,7 @@ impl TransactionsTable {
         field: &TransactionField,
         input: &str,
     ) -> Option<&Transaction> {
+        let row = self.get_unfiltered_row(row);
         self.transactions
             .iter()
             .take(row)
@@ -548,6 +612,7 @@ impl TransactionsTable {
 
     pub fn update_recommended_input(&mut self, row: usize, column: usize, input: &str) {
         if let Some(field) = TransactionField::get(column) {
+            let row = self.get_unfiltered_row(row);
             if input.chars().count() > 0 {
                 // look for a previous input of the same field that starts with the given input
                 self.recommended_input = self
@@ -590,12 +655,12 @@ impl TransactionsTable {
         self.recommended_input = None;
     }
 
-    pub fn iter(&self) -> Iter<'_, Transaction> {
-        self.transactions.iter()
-    }
-
     pub fn len(&self) -> usize {
         self.transactions.len()
+    }
+
+    pub fn filtered_len(&self) -> usize {
+        self.filtered_transactions().count()
     }
 
     pub fn generate_report(&self) -> TransactionsReport {

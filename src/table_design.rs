@@ -10,7 +10,6 @@ pub fn add_design_to_table<'a>(
     table: Table<'a>,
     header: Row<'a>,
     colors: &TableColors,
-    highlight_selected: bool,
 ) -> Table<'a> {
     let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
     let selected_row_style = Style::default()
@@ -30,13 +29,9 @@ pub fn add_design_to_table<'a>(
                 .border_type(BorderType::Double)
                 .border_style(Style::new().fg(colors.border_color)),
         );
-    if highlight_selected {
-        return formatted_table
-            .row_highlight_style(selected_row_style)
-            .column_highlight_style(selected_col_style)
-            .cell_highlight_style(selected_cell_style)
-            .highlight_symbol(Text::from(vec!["".into(), bar.into(), "".into()]));
-    } else {
-        return formatted_table;
-    }
+    return formatted_table
+        .row_highlight_style(selected_row_style)
+        .column_highlight_style(selected_col_style)
+        .cell_highlight_style(selected_cell_style)
+        .highlight_symbol(Text::from(vec!["".into(), bar.into(), "".into()]));
 }

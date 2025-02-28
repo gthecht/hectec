@@ -133,15 +133,23 @@ impl App {
                     self.showing_page.toggle();
                     match self.showing_page {
                         Page::Input => {
-                            self.input_page.last_row();
-                            self.input_page.select_first_column();
+                            self.input_page.reset_table(((None, None), None));
                         }
                         Page::Report => self.reload_report(),
                     }
                 }
                 _ => match self.showing_page {
                     Page::Input => self.input_page.handle_key_events(key),
-                    Page::Report => self.report_page.handle_key_events(key),
+                    Page::Report => {
+                        if ctrl_pressed {
+                            if let Some(()) = self.report_page.handle_key_events(key) {
+                                self.input_page
+                                    .reset_table(self.report_page.get_report_filter());
+                                return None;
+                            }
+                        }
+                        self.input_page.handle_key_events(key);
+                    }
                 },
             }
         }
@@ -176,9 +184,7 @@ impl App {
                 let layout = &Layout::horizontal([Constraint::Length(74), Constraint::Min(50)]);
                 let content_rects = layout.split(rects[1]);
                 self.report_page.draw(frame, content_rects[0], &self.colors);
-                let filter = self.report_page.get_category_and_month();
-                self.input_page
-                    .render_table(frame, content_rects[1], &self.colors, false, filter);
+                self.input_page.draw(frame, content_rects[1], &self.colors);
             }
         }
     }
