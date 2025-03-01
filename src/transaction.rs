@@ -294,7 +294,10 @@ pub type MonthInYear = (
     u8,  //month
 );
 
-pub type DirectionAndCategory = (Option<String>, Option<String>);
+pub type DirectionAndCategory = (
+    Option<String>, // direction
+    Option<String>, // category
+);
 type SummaryMap = HashMap<(DirectionAndCategory, MonthInYear), f64>;
 
 const DEFAULT_CURRENCY: &str = "ILS";
@@ -396,8 +399,8 @@ impl TransactionsReport {
             .map_or((None, None), |category| category.clone())
     }
 
-    pub fn get_category_rows_for_month_by_index(&self, index: usize) -> Vec<Vec<String>> {
-        if let Some(month) = self.get_month_at_index(index) {
+    pub fn get_category_rows_for_month_by_index(&self, index: Option<usize>) -> Vec<Vec<String>> {
+        if let Some(month) = index.map(|i| self.get_month_at_index(i)).flatten() {
             self.categories
                 .iter()
                 .map(|direction_and_category| {

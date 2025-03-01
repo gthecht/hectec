@@ -185,7 +185,7 @@ impl ReportPage {
 
     fn render_categories(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let header = Row::new(vec!["Category", "Sum"]);
-        let index = self.months_table_state.selected().unwrap_or(0);
+        let index = self.months_table_state.selected();
         let rows = self
             .report
             .get_category_rows_for_month_by_index(index)
