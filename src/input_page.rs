@@ -110,8 +110,10 @@ impl InputPage {
     }
 
     fn first_row(&mut self) {
-        let i = Some(0);
-        self.update_selected(i);
+        match self.transactions_table.filtered_len() {
+            0 => self.update_selected(None),
+            _ => self.update_selected(Some(0)),
+        }
     }
 
     pub fn last_row(&mut self) {
