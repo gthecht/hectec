@@ -366,12 +366,15 @@ impl TransactionsReport {
             .collect()
     }
 
-    pub fn get_month_at_index(&self, index: usize) -> Option<&MonthInYear> {
-        self.months.get(index)
+    pub fn get_month_at_index(&self, index: Option<usize>) -> Option<&MonthInYear> {
+        index.map(|index| self.months.get(index)).flatten()
     }
 
     /** Returns a vector of categories that have a non-0 value for the given month */
-    pub fn get_categories_for_month_by_index(&self, index: usize) -> Vec<DirectionAndCategory> {
+    pub fn get_categories_for_month_by_index(
+        &self,
+        index: Option<usize>,
+    ) -> Vec<DirectionAndCategory> {
         if let Some(month) = self.get_month_at_index(index) {
             self.categories
                 .iter()
@@ -390,45 +393,51 @@ impl TransactionsReport {
     /** Returns the category label for a month index and a category index */
     pub fn get_category_by_index_for_month_at_index(
         &self,
-        month_index: usize,
-        category_index: usize,
+        month_index: Option<usize>,
+        category_index: Option<usize>,
     ) -> DirectionAndCategory {
         let categories = self.get_categories_for_month_by_index(month_index);
-        categories
-            .get(category_index)
-            .map_or((None, None), |category| category.clone())
+        category_index.map_or((None, None), |category_index| {
+            categories
+                .get(category_index)
+                .map_or((None, None), |category| category.clone())
+        })
     }
 
     pub fn get_category_rows_for_month_by_index(&self, index: Option<usize>) -> Vec<Vec<String>> {
-        if let Some(month) = index.map(|i| self.get_month_at_index(i)).flatten() {
-            self.categories
-                .iter()
-                .map(|direction_and_category| {
-                    self.category_summary
-                        .get(&(direction_and_category.clone(), *month))
+        let month = self.get_month_at_index(index);
+        self.categories
+            .iter()
+            .map(|direction_and_category| match month {
+                Some(&month) => self
+                    .category_summary
+                    .get(&(direction_and_category.clone(), month))
+                    .map(|sum| (direction_and_category, sum)),
+                None => self.months.iter().fold(0.0, |acc, &month| {
+                    acc + self
+                        .category_summary
+                        .get(&(direction_and_category.clone(), month))
                         .map(|sum| (direction_and_category, sum))
-                })
-                .filter_map(|category_sum| category_sum)
-                .map(|(direction_and_category, sum)| {
-                    vec![
-                        format!(
-                            "\n{} - {}",
-                            direction_and_category
-                                .0
-                                .as_ref()
-                                .unwrap_or(&"*".to_string()),
-                            direction_and_category
-                                .1
-                                .as_ref()
-                                .unwrap_or(&"*".to_string())
-                        ),
-                        format!("\n{:02.2}\n", sum),
-                    ]
-                })
-                .collect()
-        } else {
-            vec![]
-        }
+                }),
+            })
+            .filter_map(|category_sum| category_sum)
+            .map(|(direction_and_category, sum)| {
+                vec![
+                    format!(
+                        "\n{} - {}",
+                        direction_and_category
+                            .0
+                            .as_ref()
+                            .unwrap_or(&"*".to_string()),
+                        direction_and_category
+                            .1
+                            .as_ref()
+                            .unwrap_or(&"*".to_string())
+                    ),
+                    format!("\n{:02.2}\n", sum),
+                ]
+            })
+            .collect()
     }
 }
 

@@ -69,14 +69,11 @@ impl ReportPage {
     }
 
     fn set_selected_category(&mut self) {
-        let month_index = self.months_table_state.selected().unwrap_or(0);
+        let month_index = self.months_table_state.selected();
         let category_index = self.categories_table_state.selected();
-        self.selected_category = category_index
-            .map(|index| {
-                self.report
-                    .get_category_by_index_for_month_at_index(month_index, index)
-            })
-            .unwrap_or((None, None));
+        self.selected_category = self
+            .report
+            .get_category_by_index_for_month_at_index(month_index, category_index)
     }
 
     fn set_category_index(&mut self) {
@@ -84,7 +81,7 @@ impl ReportPage {
             return;
         }
         // else look for the category in the current month's categories and set the index to that or None
-        let month_index = self.months_table_state.selected().unwrap_or(0);
+        let month_index = self.months_table_state.selected();
         let month_categories = self.report.get_categories_for_month_by_index(month_index);
         let category_index = month_categories.iter().position(|(dir, ctg)| {
             (&self.selected_category.0 == dir) && (&self.selected_category.1 == ctg)
@@ -97,7 +94,7 @@ impl ReportPage {
             let number_of_months = self.report.rows_len();
             let number_of_categories = self
                 .report
-                .get_categories_for_month_by_index(self.months_table_state.selected().unwrap_or(0))
+                .get_categories_for_month_by_index(self.months_table_state.selected())
                 .len();
             match key.code {
                 KeyCode::Down => {
@@ -213,10 +210,8 @@ impl ReportPage {
     pub(crate) fn get_report_filter(&self) -> (DirectionAndCategory, Option<MonthInYear>) {
         (
             self.selected_category.clone(),
-            self.months_table_state
-                .selected()
-                .map(|index| self.report.get_month_at_index(index))
-                .flatten()
+            self.report
+                .get_month_at_index(self.months_table_state.selected())
                 .cloned(),
         )
     }
