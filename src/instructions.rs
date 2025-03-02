@@ -16,6 +16,7 @@ const FULL_INSTRUECTIONS: [&str; FULL_INSTRUCTIONS_HEIGHT as usize] = [
     "ESC => save & quit",
     "CTRL+H => close help instructions",
     "CTRL+C => change color",
+    "CTRL+R => toggle between insert mode and report mode",
     "↑ => one line up | ↓/ENTER => one line down",
     "ENTER at last line => create new transaction",
     "SHIFT+TAB => previous-column",
