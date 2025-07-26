@@ -11,8 +11,8 @@ use crate::TableColors;
 const ONELINE_INSTRUCTIONS: [&str; 1] =
     ["ESC => save & quit | CTRL+H => open help instructions | CTRL+C => change color"];
 
-const FULL_INSTRUCTIONS_HEIGHT: u16 = 10;
-const FULL_INSTRUECTIONS: [&str; FULL_INSTRUCTIONS_HEIGHT as usize] = [
+const FULL_INSTRUCTIONS_HEIGHT: u16 = 16;
+const FULL_INSTRUCTIONS: [&str; FULL_INSTRUCTIONS_HEIGHT as usize] = [
     "ESC => save & quit",
     "CTRL+H => close help instructions",
     "CTRL+C => change color",
@@ -24,6 +24,11 @@ const FULL_INSTRUECTIONS: [&str; FULL_INSTRUCTIONS_HEIGHT as usize] = [
     "PgUp => go to first row | PgDn => go to last row",
     "CTRL+D => delete selected row",
     "DEL at end of text => remove recommended text",
+    "Reports page:",
+    "CTRL+↑ => previous month",
+    "CTRL+↓ => next month",
+    "CTRL+← => previous category",
+    "CTRL+→ => next category",
 ];
 
 enum State {
@@ -48,7 +53,7 @@ impl Instructions {
 
     pub fn full() -> Self {
         Self {
-            instructions: Vec::from(FULL_INSTRUECTIONS),
+            instructions: Vec::from(FULL_INSTRUCTIONS),
             height: FULL_INSTRUCTIONS_HEIGHT,
             state: State::Full,
         }
