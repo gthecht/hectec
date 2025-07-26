@@ -39,8 +39,8 @@ impl ReportPage {
 
     fn next_row(table_state: &mut TableState, rows_len: usize) {
         let i = table_state.selected().map_or(0, |i| {
-            if i >= rows_len - 1 {
-                rows_len - 1
+            if i >= rows_len.saturating_sub(1) {
+                rows_len.saturating_sub(1)
             } else {
                 i + 1
             }

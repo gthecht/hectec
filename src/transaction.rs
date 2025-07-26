@@ -386,7 +386,7 @@ impl TransactionsReport {
                 .map(|dac| dac.clone())
                 .collect()
         } else {
-            vec![]
+            self.categories.clone()
         }
     }
 
@@ -412,13 +412,15 @@ impl TransactionsReport {
                 Some(&month) => self
                     .category_summary
                     .get(&(direction_and_category.clone(), month))
-                    .map(|sum| (direction_and_category, sum)),
-                None => self.months.iter().fold(0.0, |acc, &month| {
-                    acc + self
-                        .category_summary
-                        .get(&(direction_and_category.clone(), month))
-                        .map(|sum| (direction_and_category, sum))
-                }),
+                    .map(|sum| (direction_and_category, *sum)),
+                None => {
+                    let sum = self.months.iter().fold(0.0, |acc, &month| {
+                        self.category_summary
+                            .get(&(direction_and_category.clone(), month))
+                            .map_or(acc, |month_val| month_val + acc)
+                    });
+                    Some((direction_and_category, sum))
+                }
             })
             .filter_map(|category_sum| category_sum)
             .map(|(direction_and_category, sum)| {
@@ -605,7 +607,7 @@ impl TransactionsTable {
                 return row;
             }
         }
-        panic!("transaction for row number {} should exist", row);
+        0
     }
 
     fn find_recommended_transactions_by_field(
