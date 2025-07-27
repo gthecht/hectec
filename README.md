@@ -35,3 +35,11 @@ Beware of the auto-complete when filling in the amounts, since it may complete t
 - PgUp => go to first row | PgDn => go to last row
 - CTRL+D => delete selected row
 - DEL at end of text => remove recommended text
+
+## To Do
+- [ ] Toggle months or year in report
+- [ ] Write report summary page to csv of categories by months
+- [ ] Add category percentage
+- [ ] Don't count non-main currency, or split by currency
+- [ ] import from image (of credit card table)
+- [ ] Pensions and savings funds
