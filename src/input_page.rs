@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
     style::{palette::tailwind, Style, Stylize},
@@ -11,6 +11,7 @@ use ratatui::{
 use crate::{
     table_design::add_design_to_table,
     transaction::{DirectionAndCategory, MonthInYear, TransactionField, TransactionsTable},
+    utils::ctrl_is_pressed,
     TableColors,
 };
 
@@ -222,7 +223,7 @@ impl InputPage {
 
     pub fn handle_key_events(&mut self, key: KeyEvent) {
         if key.kind == KeyEventKind::Press {
-            let ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
+            let ctrl_pressed = ctrl_is_pressed(&key);
             match key.code {
                 KeyCode::Enter => match self.commit_input() {
                     Ok(()) => {

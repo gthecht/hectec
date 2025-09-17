@@ -4,15 +4,19 @@ mod logger;
 mod report_page;
 mod table_design;
 mod transaction;
+mod utils;
 use std::env;
 use std::path::PathBuf;
 
-use crate::input_page::InputPage;
 use crate::instructions::Instructions;
 use crate::logger::initialize_logging;
 use crate::transaction::TransactionsTable;
+use crate::{input_page::InputPage, utils::ctrl_is_pressed};
 use color_eyre::Result;
-use crossterm::event::{KeyEvent, KeyModifiers};
+use crossterm::{
+    event::KeyEvent,
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin, Rect},
@@ -124,11 +128,11 @@ impl App {
 
     fn handle_key_events(&mut self, key: KeyEvent) -> Option<()> {
         if key.kind == KeyEventKind::Press {
-            let ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
+            let ctrl_pressed = ctrl_is_pressed(&key);
             match key.code {
                 KeyCode::Esc => return Some(()),
                 KeyCode::Char('c') if ctrl_pressed => self.next_color(),
-                KeyCode::Char('h') if ctrl_pressed => self.instructions.toggle(),
+                KeyCode::Char('o') if ctrl_pressed => self.instructions.toggle(),
                 KeyCode::Char('r') if ctrl_pressed => {
                     self.showing_page.toggle();
                     match self.showing_page {
@@ -157,12 +161,14 @@ impl App {
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+        enable_raw_mode()?;
         self.input_page.initialize_table()?;
         loop {
             terminal.draw(|frame| self.draw(frame))?;
             if let Event::Key(key) = event::read()? {
                 if let Some(_) = self.handle_key_events(key) {
                     self.input_page.transactions_table.save_transactions()?;
+                    disable_raw_mode()?;
                     return Ok(());
                 }
             }

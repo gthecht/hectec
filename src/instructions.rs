@@ -9,12 +9,12 @@ use ratatui::{
 use crate::TableColors;
 
 const ONELINE_INSTRUCTIONS: [&str; 1] =
-    ["ESC => save & quit | CTRL+H => open help instructions | CTRL+C => change color"];
+    ["ESC => save & quit | CTRL+O => expand help instructions | CTRL+C => change color"];
 
 const FULL_INSTRUCTIONS_HEIGHT: u16 = 16;
 const FULL_INSTRUCTIONS: [&str; FULL_INSTRUCTIONS_HEIGHT as usize] = [
     "ESC => save & quit",
-    "CTRL+H => close help instructions",
+    "CTRL+O => collapse help instructions",
     "CTRL+C => change color",
     "CTRL+R => toggle between insert mode and report mode",
     "↑ => one line up | ↓/ENTER => one line down",
@@ -25,10 +25,10 @@ const FULL_INSTRUCTIONS: [&str; FULL_INSTRUCTIONS_HEIGHT as usize] = [
     "CTRL+D => delete selected row",
     "DEL at end of text => remove recommended text",
     "Reports page:",
-    "CTRL+↑ => previous month",
-    "CTRL+↓ => next month",
-    "CTRL+← => previous category",
-    "CTRL+→ => next category",
+    "CTRL+↑ | CTRL+k => previous month",
+    "CTRL+↓ | CTRL+j => next month",
+    "CTRL+← | CTRL+h => previous category",
+    "CTRL+→ | CTRL+l => next category",
 ];
 
 enum State {

@@ -97,11 +97,11 @@ impl ReportPage {
                 .get_categories_for_month_by_index(self.months_table_state.selected())
                 .len();
             match key.code {
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     Self::next_row(&mut self.months_table_state, number_of_months);
                     self.set_category_index();
                 }
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     Self::previous_row(&mut self.months_table_state);
                     self.set_category_index();
                 }
@@ -113,11 +113,11 @@ impl ReportPage {
                     Self::last_row(&mut self.months_table_state, number_of_months);
                     self.set_category_index();
                 }
-                KeyCode::Right => {
+                KeyCode::Right | KeyCode::Char('l') => {
                     Self::next_row(&mut self.categories_table_state, number_of_categories);
                     self.set_selected_category();
                 }
-                KeyCode::Left => {
+                KeyCode::Left | KeyCode::Char('h') => {
                     Self::previous_row(&mut self.categories_table_state);
                     self.set_selected_category();
                 }
