@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::{
     table_design::add_design_to_table,
-    transaction::{DirectionAndCategory, MonthInYear, TransactionsReport},
+    transaction::{DirectionAndCategory, Filter, TransactionsReport},
     TableColors,
 };
 
@@ -207,12 +207,13 @@ impl ReportPage {
         frame.render_stateful_widget(t, area, &mut self.categories_table_state);
     }
 
-    pub(crate) fn get_report_filter(&self) -> (DirectionAndCategory, Option<MonthInYear>) {
-        (
+    pub(crate) fn get_report_filter(&self) -> Filter {
+        Filter::new(
             self.selected_category.clone(),
             self.report
                 .get_month_at_index(self.months_table_state.selected())
                 .cloned(),
+            None,
         )
     }
 }

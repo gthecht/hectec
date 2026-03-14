@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     table_design::add_design_to_table,
-    transaction::{DirectionAndCategory, MonthInYear, TransactionField, TransactionsTable},
+    transaction::{Filter, TransactionField, TransactionsTable},
     utils::ctrl_is_pressed,
     TableColors,
 };
@@ -41,7 +41,7 @@ impl InputPage {
         }
     }
 
-    pub fn reset_table(&mut self, filter: (DirectionAndCategory, Option<MonthInYear>)) {
+    pub fn reset_table(&mut self, filter: Filter) {
         self.transactions_table.set_filter(filter);
         self.last_row();
         self.select_first_column();
@@ -49,7 +49,7 @@ impl InputPage {
 
     pub fn initialize_table(&mut self) -> Result<()> {
         self.transactions_table.load()?;
-        self.reset_table(((None, None), None));
+        self.reset_table(Filter::default());
         Ok(())
     }
 

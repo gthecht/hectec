@@ -235,7 +235,7 @@ impl Transaction {
         TransactionField::get(field_index).map(|field| self.get_field_text(&field))
     }
 
-    pub fn generate_row(&self) -> Row {
+    pub fn generate_row(&self) -> Row<'_> {
         let cells: Vec<Cell> = TransactionField::all_fields()
             .into_iter()
             .map(|field| self.get_field_text(&field))
@@ -443,12 +443,33 @@ impl TransactionsReport {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct Filter {
+    direction_and_category: DirectionAndCategory,
+    month_in_year: Option<MonthInYear>,
+    payment_method: Option<String>,
+}
+
+impl Filter {
+    pub fn new(
+        direction_and_category: DirectionAndCategory,
+        month_in_year: Option<MonthInYear>,
+        payment_method: Option<String>,
+    ) -> Self {
+        Self {
+            direction_and_category,
+            month_in_year,
+            payment_method,
+        }
+    }
+}
+
 pub struct TransactionsTable {
     transactions: Vec<Transaction>,
     recommended_input: Option<String>,
     file_path: PathBuf,
     file_type: FileType,
-    filter: (DirectionAndCategory, Option<MonthInYear>),
+    filter: Filter,
 }
 
 impl TransactionsTable {
@@ -459,7 +480,7 @@ impl TransactionsTable {
             recommended_input: None,
             file_path,
             file_type,
-            filter: ((None, None), None),
+            filter: Filter::default(),
         }
     }
 
@@ -521,7 +542,7 @@ impl TransactionsTable {
         Ok(())
     }
 
-    pub fn set_filter(&mut self, filter: (DirectionAndCategory, Option<MonthInYear>)) {
+    pub fn set_filter(&mut self, filter: Filter) {
         self.filter = filter;
     }
 
@@ -529,20 +550,24 @@ impl TransactionsTable {
         self.transactions.iter().filter(|transaction| {
             let dir_matches = self
                 .filter
+                .direction_and_category
                 .0
-                 .0
                 .as_ref()
                 .map_or(true, |d| &transaction.direction == d);
             let ctg_matches = self
                 .filter
-                .0
-                 .1
+                .direction_and_category
+                .1
                 .as_ref()
                 .map_or(true, |c| &transaction.category == c);
-            let date_matches = self.filter.1.as_ref().map_or(true, |month_in_year| {
-                transaction.date.year == month_in_year.0
-                    && transaction.date.month == month_in_year.1
-            });
+            let date_matches = self
+                .filter
+                .month_in_year
+                .as_ref()
+                .map_or(true, |month_in_year| {
+                    transaction.date.year == month_in_year.0
+                        && transaction.date.month == month_in_year.1
+                });
             dir_matches && ctg_matches && date_matches
         })
     }
@@ -550,7 +575,7 @@ impl TransactionsTable {
     pub fn new_transaction(&mut self) {
         let last_transaction_date = self.filtered_transactions().last().unwrap().date;
         let mut new_transaction = Transaction::new(last_transaction_date);
-        let (direction, category) = self.filter.0.clone();
+        let (direction, category) = self.filter.direction_and_category.clone();
         if let Some(direction) = direction {
             new_transaction
                 .mutate_field_by_transaction_field(TransactionField::Direction, direction.as_str())

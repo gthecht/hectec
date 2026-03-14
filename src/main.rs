@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use crate::instructions::Instructions;
 use crate::logger::initialize_logging;
-use crate::transaction::TransactionsTable;
+use crate::transaction::{Filter, TransactionsTable};
 use crate::{input_page::InputPage, utils::ctrl_is_pressed};
 use color_eyre::Result;
 use crossterm::{
@@ -137,7 +137,7 @@ impl App {
                     self.showing_page.toggle();
                     match self.showing_page {
                         Page::Input => {
-                            self.input_page.reset_table(((None, None), None));
+                            self.input_page.reset_table(Filter::default());
                         }
                         Page::Report => self.reload_report(),
                     }
