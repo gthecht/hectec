@@ -209,7 +209,8 @@ impl ReportPage {
 
     pub(crate) fn get_report_filter(&self) -> Filter {
         Filter::new(
-            self.selected_category.clone(),
+            self.selected_category.clone().0,
+            self.selected_category.clone().1,
             self.report
                 .get_month_at_index(self.months_table_state.selected())
                 .cloned(),

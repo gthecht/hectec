@@ -445,19 +445,22 @@ impl TransactionsReport {
 
 #[derive(Default, Clone)]
 pub struct Filter {
-    direction_and_category: DirectionAndCategory,
+    direction: Option<String>,
+    category: Option<String>,
     month_in_year: Option<MonthInYear>,
     payment_method: Option<String>,
 }
 
 impl Filter {
     pub fn new(
-        direction_and_category: DirectionAndCategory,
+        direction: Option<String>,
+        category: Option<String>,
         month_in_year: Option<MonthInYear>,
         payment_method: Option<String>,
     ) -> Self {
         Self {
-            direction_and_category,
+            direction,
+            category,
             month_in_year,
             payment_method,
         }
@@ -550,14 +553,12 @@ impl TransactionsTable {
         self.transactions.iter().filter(|transaction| {
             let dir_matches = self
                 .filter
-                .direction_and_category
-                .0
+                .direction
                 .as_ref()
                 .map_or(true, |d| &transaction.direction == d);
             let ctg_matches = self
                 .filter
-                .direction_and_category
-                .1
+                .category
                 .as_ref()
                 .map_or(true, |c| &transaction.category == c);
             let date_matches = self
@@ -575,13 +576,12 @@ impl TransactionsTable {
     pub fn new_transaction(&mut self) {
         let last_transaction_date = self.filtered_transactions().last().unwrap().date;
         let mut new_transaction = Transaction::new(last_transaction_date);
-        let (direction, category) = self.filter.direction_and_category.clone();
-        if let Some(direction) = direction {
+        if let Some(direction) = &self.filter.direction {
             new_transaction
                 .mutate_field_by_transaction_field(TransactionField::Direction, direction.as_str())
                 .expect("injection into type String should always succeed");
         }
-        if let Some(category) = category {
+        if let Some(category) = &self.filter.category {
             new_transaction
                 .mutate_field_by_transaction_field(TransactionField::Category, category.as_str())
                 .expect("injection into type String should always succeed");
