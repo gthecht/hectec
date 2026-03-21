@@ -214,7 +214,6 @@ impl ReportPage {
             self.report
                 .get_month_at_index(self.months_table_state.selected())
                 .cloned(),
-            None,
         )
     }
 }

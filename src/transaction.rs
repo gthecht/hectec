@@ -23,7 +23,13 @@ pub struct SimpleDate {
     pub year: i32,
     pub month: u8,
     pub day: u8,
-    date: Date,
+}
+
+impl SimpleDate {
+    pub fn date(&self) -> Date {
+        // since date is always valid, unwrap is safe
+        Date::from_calendar_date(self.year, Month::try_from(self.month).unwrap(), self.day).unwrap()
+    }
 }
 
 impl TryFrom<&str> for SimpleDate {
@@ -52,15 +58,11 @@ impl TryFrom<&str> for SimpleDate {
             .ok_or_else(|| format!("Missing day in {}", date_string))
             .and_then(|d| d.parse::<u8>().map_err(|_| format!("Invalid day: {}", d)))?;
 
-        let date = Date::from_calendar_date(year, monthy_month, day)
+        // check that the date is valid
+        let _date = Date::from_calendar_date(year, monthy_month, day)
             .map_err(|_| format!("Invalid date: {}", date_string))?;
 
-        Ok(SimpleDate {
-            year,
-            month,
-            day,
-            date,
-        })
+        Ok(SimpleDate { year, month, day })
     }
 }
 
@@ -91,13 +93,13 @@ impl<'de> Deserialize<'de> for SimpleDate {
 
 impl PartialOrd for SimpleDate {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.date.cmp(&other.date))
+        Some(self.date().cmp(&other.date()))
     }
 }
 
 impl Ord for SimpleDate {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.date.cmp(&other.date)
+        self.date().cmp(&other.date())
     }
 }
 
@@ -445,10 +447,12 @@ impl TransactionsReport {
 
 #[derive(Default, Clone)]
 pub struct Filter {
-    direction: Option<String>,
-    category: Option<String>,
+    direction: String,
+    category: String,
     month_in_year: Option<MonthInYear>,
-    payment_method: Option<String>,
+    method: String,
+    details: String,
+    currency: String,
 }
 
 impl Filter {
@@ -456,13 +460,73 @@ impl Filter {
         direction: Option<String>,
         category: Option<String>,
         month_in_year: Option<MonthInYear>,
-        payment_method: Option<String>,
     ) -> Self {
+        Self {
+            direction: direction.unwrap_or_default(),
+            category: category.unwrap_or_default(),
+            month_in_year,
+            method: "".to_string(),
+            details: "".to_string(),
+            currency: "".to_string(),
+        }
+    }
+
+    fn from_transaction(transaction: &Transaction) -> Self {
+        Self {
+            direction: transaction.direction.clone(),
+            category: transaction.category.clone(),
+            month_in_year: Some((transaction.date.year, transaction.date.month)),
+            method: transaction.method.clone(),
+            details: transaction.details.clone(),
+            currency: transaction.currency.clone(),
+        }
+    }
+
+    // TODO cleanup
+    fn merge(&self, other: &Self) -> Self {
+        let direction = if self.direction.is_empty() {
+            other.direction.clone()
+        } else {
+            self.direction.clone()
+        };
+
+        let category = if self.category.is_empty() {
+            other.category.clone()
+        } else {
+            self.category.clone()
+        };
+
+        let month_in_year = if self.month_in_year.is_none() {
+            other.month_in_year.clone()
+        } else {
+            self.month_in_year.clone()
+        };
+
+        let method = if self.method.is_empty() {
+            other.method.clone()
+        } else {
+            self.method.clone()
+        };
+
+        let details = if self.details.is_empty() {
+            other.details.clone()
+        } else {
+            self.details.clone()
+        };
+
+        let currency = if self.currency.is_empty() {
+            other.currency.clone()
+        } else {
+            self.currency.clone()
+        };
+
         Self {
             direction,
             category,
             month_in_year,
-            payment_method,
+            method,
+            details,
+            currency,
         }
     }
 }
@@ -551,16 +615,10 @@ impl TransactionsTable {
 
     pub fn filtered_transactions(&self) -> impl Iterator<Item = &Transaction> {
         self.transactions.iter().filter(|transaction| {
-            let dir_matches = self
-                .filter
-                .direction
-                .as_ref()
-                .map_or(true, |d| &transaction.direction == d);
-            let ctg_matches = self
-                .filter
-                .category
-                .as_ref()
-                .map_or(true, |c| &transaction.category == c);
+            let dir_matches = transaction.direction.contains(&self.filter.direction);
+            let ctg_matches = transaction.category.contains(&self.filter.category);
+            let details_matches = transaction.details.contains(&self.filter.details);
+            let method_matches = transaction.method.contains(&self.filter.method);
             let date_matches = self
                 .filter
                 .month_in_year
@@ -569,23 +627,22 @@ impl TransactionsTable {
                     transaction.date.year == month_in_year.0
                         && transaction.date.month == month_in_year.1
                 });
-            dir_matches && ctg_matches && date_matches
+            dir_matches && ctg_matches && details_matches && method_matches && date_matches
         })
     }
 
+    // todo: convert to Transaction::new_from_filter
     pub fn new_transaction(&mut self) {
         let last_transaction_date = self.filtered_transactions().last().unwrap().date;
-        let mut new_transaction = Transaction::new(last_transaction_date);
-        if let Some(direction) = &self.filter.direction {
-            new_transaction
-                .mutate_field_by_transaction_field(TransactionField::Direction, direction.as_str())
-                .expect("injection into type String should always succeed");
-        }
-        if let Some(category) = &self.filter.category {
-            new_transaction
-                .mutate_field_by_transaction_field(TransactionField::Category, category.as_str())
-                .expect("injection into type String should always succeed");
-        }
+        let new_transaction = Transaction {
+            date: last_transaction_date,
+            direction: self.filter.direction.clone(),
+            category: self.filter.category.clone(),
+            details: self.filter.details.clone(),
+            method: self.filter.method.clone(),
+            currency: "".to_string(),
+            amount: 0.0,
+        };
         self.transactions.push(new_transaction);
     }
 
