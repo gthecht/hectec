@@ -631,10 +631,9 @@ impl TransactionsTable {
         })
     }
 
-    // todo: convert to Transaction::new_from_filter
-    pub fn new_transaction(&mut self) {
+    pub fn new_transaction_from_filter(&mut self) -> Transaction {
         let last_transaction_date = self.filtered_transactions().last().unwrap().date;
-        let new_transaction = Transaction {
+        Transaction {
             date: last_transaction_date,
             direction: self.filter.direction.clone(),
             category: self.filter.category.clone(),
@@ -642,7 +641,11 @@ impl TransactionsTable {
             method: self.filter.method.clone(),
             currency: "".to_string(),
             amount: 0.0,
-        };
+        }
+    }
+
+    pub fn new_transaction(&mut self) {
+        let new_transaction = self.new_transaction_from_filter();
         self.transactions.push(new_transaction);
     }
 

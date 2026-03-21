@@ -2,15 +2,18 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
-    style::{palette::tailwind, Style, Stylize},
-    text::{Line, Span},
-    widgets::{Block, BorderType, Cell, Paragraph, Row, ScrollbarState, Table, TableState},
+    style::{palette::tailwind, Modifier, Style, Stylize},
+    text::{Line, Span, Text},
+    widgets::{
+        Block, BorderType, Cell, HighlightSpacing, Paragraph, Row, ScrollbarState, Table,
+        TableState,
+    },
     Frame,
 };
 
 use crate::{
     table_design::add_design_to_table,
-    transaction::{Filter, TransactionField, TransactionsTable},
+    transaction::{Filter, Transaction, TransactionField, TransactionsTable},
     utils::ctrl_is_pressed,
     TableColors,
 };
@@ -27,6 +30,10 @@ pub struct InputPage {
     pub transactions_table: TransactionsTable,
     input: String,
     error_msg: String,
+    filter_transaction: Option<Transaction>,
+    // change to toggle like Page enum
+    filter_focused: bool,
+    filter_state: TableState,
 }
 
 impl InputPage {
@@ -38,6 +45,9 @@ impl InputPage {
             error_msg: "".to_string(),
             transactions_table,
             input: "".to_string(),
+            filter_transaction: None,
+            filter_focused: false,
+            filter_state: TableState::default().with_selected(0),
         }
     }
 
@@ -53,6 +63,7 @@ impl InputPage {
         Ok(())
     }
 
+    // TODO change this so it toggles between filter row and regular row
     fn update_editing_text(&mut self) {
         if let Some((row, column)) = self.table_state.selected_cell() {
             if let Some(editing_text) = self.transactions_table.get_cell_text(row, column) {
@@ -245,6 +256,13 @@ impl InputPage {
                 KeyCode::PageUp => self.first_row(),
                 KeyCode::PageDown => self.last_row(),
                 KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
+                KeyCode::Char('f') if ctrl_pressed => {
+                    if self.filter_transaction.is_none() {
+                        self.filter_transaction =
+                            Some(self.transactions_table.new_transaction_from_filter());
+                    }
+                    self.filter_focused = !self.filter_focused
+                }
                 KeyCode::Backspace => self.delete_char(),
                 KeyCode::Delete => self.delete_char_forward(),
                 KeyCode::Left => self.move_cursor_left(),
@@ -258,17 +276,21 @@ impl InputPage {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        let vertical = &Layout::vertical([Constraint::Min(5), Constraint::Length(3)]);
+        let vertical = &Layout::vertical([
+            Constraint::Length(self.filter_focused as u16 * 5),
+            Constraint::Min(5),
+            Constraint::Length(3),
+        ]);
         let rects = vertical.split(area);
 
-        self.render_table(frame, rects[0], colors);
-        self.render_edit_bar(frame, rects[1], colors);
-        let cursor_y = rects[1].as_position().y + 1;
-        let cursor_x = rects[1].as_position().x + 1;
+        self.render_filter_bar(frame, rects[0], colors);
+        self.render_table(frame, rects[1], colors);
+        self.render_edit_bar(frame, rects[2], colors);
+        let (cursor_y, cursor_x) = (rects[2].as_position().y + 1, rects[2].as_position().x + 1);
         frame.set_cursor_position(Position::new(
             cursor_x + self.character_index as u16,
             cursor_y,
-        ))
+        ));
     }
 
     pub fn render_table(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
@@ -312,5 +334,41 @@ impl InputPage {
                     .border_style(Style::new().fg(colors.border_color)),
             );
         frame.render_widget(edit_bar, area);
+    }
+
+    fn render_filter_bar(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
+        if let Some(filter_transaction) = &self.filter_transaction {
+            let row = filter_transaction.generate_row();
+            let color = colors.normal_row_color;
+            let row = row
+                .style(Style::new().fg(colors.row_fg).bg(color))
+                .height(3);
+
+            let table = Table::new(vec![row], TransactionField::widths());
+
+            let selected_row_style = Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .fg(colors.selected_row_style_fg);
+            let selected_col_style = Style::default().fg(colors.selected_column_style_fg);
+            let selected_cell_style = Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .fg(colors.selected_cell_style_fg);
+            let bar = " █ ";
+            let formatted_table = table
+                .bg(colors.buffer_bg)
+                .highlight_spacing(HighlightSpacing::Always)
+                .block(
+                    Block::bordered()
+                        .border_type(BorderType::Double)
+                        .border_style(Style::new().fg(colors.border_color)),
+                );
+            let t = formatted_table
+                .row_highlight_style(selected_row_style)
+                .column_highlight_style(selected_col_style)
+                .cell_highlight_style(selected_cell_style)
+                .highlight_symbol(Text::from(vec!["".into(), bar.into(), "".into()]));
+
+            frame.render_stateful_widget(t, area, &mut self.filter_state);
+        }
     }
 }
