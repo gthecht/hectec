@@ -435,11 +435,12 @@ impl TransactionsReport {
 
 #[derive(Default, Clone)]
 pub struct Filter {
-    direction: String,
-    category: String,
     month_in_year: Option<MonthInYear>,
-    method: String,
+    amount: Option<f64>,
     details: String,
+    category: String,
+    method: String,
+    direction: String,
     currency: String,
 }
 
@@ -450,24 +451,35 @@ impl Filter {
         month_in_year: Option<MonthInYear>,
     ) -> Self {
         Self {
-            direction: direction.unwrap_or_default(),
-            category: category.unwrap_or_default(),
             month_in_year,
-            method: "".to_string(),
+            amount: None,
             details: "".to_string(),
+            category: category.unwrap_or_default(),
+            method: "".to_string(),
+            direction: direction.unwrap_or_default(),
             currency: "".to_string(),
         }
     }
 
     pub fn from_transaction(transaction: &Transaction) -> Self {
         Self {
-            direction: transaction.direction.clone(),
-            category: transaction.category.clone(),
             month_in_year: Some((transaction.date.year, transaction.date.month)),
-            method: transaction.method.clone(),
+            amount: None,
             details: transaction.details.clone(),
+            category: transaction.category.clone(),
+            method: transaction.method.clone(),
+            direction: transaction.direction.clone(),
             currency: transaction.currency.clone(),
         }
+    }
+
+    pub fn generate_row(&self) -> Row<'_> {
+        let cells: Vec<Cell> = TransactionField::all_fields()
+            .into_iter()
+            .map(|field| self.get_field_text(&field))
+            .map(|text| Cell::from(Text::from(format!("\n{}\n", text))))
+            .collect();
+        Row::new(cells)
     }
 
     // TODO cleanup
@@ -509,12 +521,69 @@ impl Filter {
         };
 
         Self {
-            direction,
-            category,
             month_in_year,
-            method,
+            amount: None,
             details,
+            category,
+            method,
+            direction,
             currency,
+        }
+    }
+
+    pub fn get_column_text(&self, field_index: usize) -> Option<String> {
+        TransactionField::get(field_index).map(|field| self.get_field_text(&field))
+    }
+
+    fn get_field_text(&self, field: &TransactionField) -> String {
+        match field {
+            TransactionField::Date => match self.month_in_year {
+                Some((year, month)) => format!("{}-{:02}", year, month),
+                None => "".to_string(),
+            },
+            TransactionField::Amount => "".to_string(),
+            TransactionField::Details => self.details.clone(),
+            TransactionField::Category => self.category.clone(),
+            TransactionField::Method => self.method.clone(),
+            TransactionField::Direction => self.direction.clone(),
+            TransactionField::Currency => self.currency.clone(),
+        }
+    }
+
+    fn mutate_field_by_transaction_field(
+        &mut self,
+        field: TransactionField,
+        input: &str,
+    ) -> Result<(), String> {
+        match field {
+            TransactionField::Date => {
+                if input.is_empty() {
+                    self.month_in_year = None;
+                } else {
+                    let parts: Vec<&str> = input.split("-").collect();
+                    if parts.len() > 3 {
+                        return Err("invalid date format, expected YYYY-MM-DD, YYYY-MM".to_string());
+                    }
+                    let year = parts[0].parse::<i32>().map_err(|e| e.to_string())?;
+                    let month = parts[1].parse::<u8>().map_err(|e| e.to_string())?;
+                    self.month_in_year = Some((year, month));
+                }
+                return Ok(());
+            }
+            TransactionField::Amount => {}
+            TransactionField::Details => self.details = input.to_string(),
+            TransactionField::Category => self.category = input.to_string(),
+            TransactionField::Method => self.method = input.to_string(),
+            TransactionField::Direction => self.direction = input.to_string(),
+            TransactionField::Currency => self.currency = input.to_string(),
+        }
+        Ok(())
+    }
+
+    pub fn mutate_field(&mut self, field_index: usize, input: &str) -> Result<(), String> {
+        match TransactionField::get(field_index) {
+            Some(field) => self.mutate_field_by_transaction_field(field, input),
+            None => Ok(()),
         }
     }
 }

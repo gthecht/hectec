@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     table_design::add_design_to_table,
-    transaction::{Filter, Transaction, TransactionField, TransactionsTable},
+    transaction::{Filter, TransactionField, TransactionsTable},
     utils::ctrl_is_pressed,
     TableColors,
 };
@@ -42,7 +42,7 @@ pub struct InputPage {
     pub transactions_table: TransactionsTable,
     input: String,
     error_msg: String,
-    filter_transaction: Option<Transaction>,
+    filter: Option<Filter>,
     focus: FocusArea,
     filter_state: TableState,
 }
@@ -56,7 +56,7 @@ impl InputPage {
             error_msg: "".to_string(),
             transactions_table,
             input: "".to_string(),
-            filter_transaction: None,
+            filter: None,
             focus: FocusArea::Table,
             filter_state: TableState::default().with_selected(0),
         }
@@ -90,7 +90,7 @@ impl InputPage {
             FocusArea::Filter => {
                 if let Some((_, column)) = self.filter_state.selected_cell() {
                     if let Some(editing_text) = self
-                        .filter_transaction
+                        .filter
                         .as_ref()
                         .map(|t| t.get_column_text(column))
                         .flatten()
@@ -103,9 +103,9 @@ impl InputPage {
                             .update_recommended_input(row, column, &self.input);
                     }
                 }
-                if let Some(filter_transaction) = self.filter_transaction.as_ref() {
+                if let Some(filter_transaction) = self.filter.as_ref() {
                     self.transactions_table
-                        .set_filter(Filter::from_transaction(filter_transaction));
+                        .set_filter(filter_transaction.clone());
                 }
             }
         }
@@ -133,7 +133,7 @@ impl InputPage {
                 }
             }
             FocusArea::Filter => {
-                self.filter_transaction = None;
+                self.filter = None;
             }
         }
     }
@@ -322,7 +322,7 @@ impl InputPage {
             }
             FocusArea::Filter => {
                 if let Some((_, column)) = self.filter_state.selected_cell() {
-                    self.filter_transaction
+                    self.filter
                         .as_mut()
                         .map(|t| t.mutate_field(column, &self.input))
                         .transpose()?;
@@ -334,9 +334,12 @@ impl InputPage {
 
     fn update_focus(&mut self) {
         self.focus.toggle();
-        if self.focus == FocusArea::Filter && self.filter_transaction.is_none() {
-            self.filter_transaction = Some(self.transactions_table.new_transaction_from_filter());
+        if self.focus == FocusArea::Filter && self.filter.is_none() {
+            self.filter = Some(Filter::from_transaction(
+                &self.transactions_table.new_transaction_from_filter(),
+            ));
             self.filter_state.select(Some(0));
+            self.select_first_column();
         }
         self.update_editing_text();
     }
@@ -442,7 +445,7 @@ impl InputPage {
             .style(header_style)
             .height(1);
 
-        if let Some(filter_transaction) = &self.filter_transaction {
+        if let Some(filter_transaction) = &self.filter {
             let row = filter_transaction.generate_row();
             let color = colors.normal_row_color;
             let row = row
