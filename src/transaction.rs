@@ -173,18 +173,6 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn new(date: SimpleDate) -> Self {
-        Transaction {
-            date,
-            amount: 0.0,
-            details: "".to_string(),
-            category: "".to_string(),
-            method: "".to_string(),
-            direction: "".to_string(),
-            currency: "".to_string(),
-        }
-    }
-
     fn mutate_field_by_transaction_field(
         &mut self,
         field: TransactionField,
@@ -233,7 +221,7 @@ impl Transaction {
         }
     }
 
-    fn get_column_text(&self, field_index: usize) -> Option<String> {
+    pub fn get_column_text(&self, field_index: usize) -> Option<String> {
         TransactionField::get(field_index).map(|field| self.get_field_text(&field))
     }
 
@@ -471,7 +459,7 @@ impl Filter {
         }
     }
 
-    fn from_transaction(transaction: &Transaction) -> Self {
+    pub fn from_transaction(transaction: &Transaction) -> Self {
         Self {
             direction: transaction.direction.clone(),
             category: transaction.category.clone(),

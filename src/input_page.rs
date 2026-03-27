@@ -2,12 +2,9 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
-    style::{palette::tailwind, Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{
-        Block, BorderType, Cell, HighlightSpacing, Paragraph, Row, ScrollbarState, Table,
-        TableState,
-    },
+    style::{palette::tailwind, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Cell, Paragraph, Row, ScrollbarState, Table, TableState},
     Frame,
 };
 
@@ -23,6 +20,21 @@ enum ShouldAddNewRow {
     No,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum FocusArea {
+    Table,
+    Filter,
+}
+
+impl FocusArea {
+    pub fn toggle(&mut self) {
+        match self {
+            Self::Table => *self = Self::Filter,
+            Self::Filter => *self = Self::Table,
+        }
+    }
+}
+
 pub struct InputPage {
     table_state: TableState,
     scroll_state: ScrollbarState,
@@ -31,8 +43,7 @@ pub struct InputPage {
     input: String,
     error_msg: String,
     filter_transaction: Option<Transaction>,
-    // change to toggle like Page enum
-    filter_focused: bool,
+    focus: FocusArea,
     filter_state: TableState,
 }
 
@@ -46,7 +57,7 @@ impl InputPage {
             transactions_table,
             input: "".to_string(),
             filter_transaction: None,
-            filter_focused: false,
+            focus: FocusArea::Table,
             filter_state: TableState::default().with_selected(0),
         }
     }
@@ -63,93 +74,170 @@ impl InputPage {
         Ok(())
     }
 
-    // TODO change this so it toggles between filter row and regular row
     fn update_editing_text(&mut self) {
-        if let Some((row, column)) = self.table_state.selected_cell() {
-            if let Some(editing_text) = self.transactions_table.get_cell_text(row, column) {
-                self.input = editing_text.clone();
-                self.error_msg = "".to_string();
-                self.character_index = self.input.chars().count();
-                self.transactions_table
-                    .update_recommended_input(row, column, &self.input);
+        match self.focus {
+            FocusArea::Table => {
+                if let Some((row, column)) = self.table_state.selected_cell() {
+                    if let Some(editing_text) = self.transactions_table.get_cell_text(row, column) {
+                        self.input = editing_text.clone();
+                        self.error_msg = "".to_string();
+                        self.character_index = self.input.chars().count();
+                        self.transactions_table
+                            .update_recommended_input(row, column, &self.input);
+                    }
+                }
+            }
+            FocusArea::Filter => {
+                if let Some((_, column)) = self.filter_state.selected_cell() {
+                    if let Some(editing_text) = self
+                        .filter_transaction
+                        .as_ref()
+                        .map(|t| t.get_column_text(column))
+                        .flatten()
+                    {
+                        self.input = editing_text.clone();
+                        self.error_msg = "".to_string();
+                        self.character_index = self.input.chars().count();
+                        let row = self.transactions_table.filtered_len();
+                        self.transactions_table
+                            .update_recommended_input(row, column, &self.input);
+                    }
+                }
+                if let Some(filter_transaction) = self.filter_transaction.as_ref() {
+                    self.transactions_table
+                        .set_filter(Filter::from_transaction(filter_transaction));
+                }
             }
         }
     }
 
     fn update_selected(&mut self, i: Option<usize>) {
-        self.table_state.select(i);
-        self.scroll_state = self.scroll_state.position(i.map_or(0, |i| i * 4)); // each row is of height 4
+        match self.focus {
+            FocusArea::Table => {
+                self.table_state.select(i);
+                // each row is of height 4
+                self.scroll_state = self.scroll_state.position(i.map_or(0, |i| i * 4));
+            }
+            FocusArea::Filter => {
+                self.filter_state.select(Some(0));
+            }
+        }
         self.update_editing_text();
     }
 
     fn delete_transaction(&mut self) {
-        if let Some(i) = self.table_state.selected() {
-            self.transactions_table.delete_transaction(i);
+        match self.focus {
+            FocusArea::Table => {
+                if let Some(i) = self.table_state.selected() {
+                    self.transactions_table.delete_transaction(i);
+                }
+            }
+            FocusArea::Filter => {
+                self.filter_transaction = None;
+            }
         }
     }
 
     fn next_row(&mut self, add_new_row_if_end: ShouldAddNewRow) {
-        let i = self
-            .table_state
-            .selected()
-            .map(|i| {
-                self.transactions_table.filtered_len().checked_sub(1).map(
-                    |last_transaction_index| {
-                        if i >= last_transaction_index {
-                            match add_new_row_if_end {
-                                ShouldAddNewRow::Yes => {
-                                    self.transactions_table.new_transaction();
-                                    last_transaction_index + 1
+        match self.focus {
+            FocusArea::Table => {
+                let i = self
+                    .table_state
+                    .selected()
+                    .map(|i| {
+                        self.transactions_table.filtered_len().checked_sub(1).map(
+                            |last_transaction_index| {
+                                if i >= last_transaction_index {
+                                    match add_new_row_if_end {
+                                        ShouldAddNewRow::Yes => {
+                                            self.transactions_table.new_transaction();
+                                            last_transaction_index + 1
+                                        }
+                                        ShouldAddNewRow::No => last_transaction_index,
+                                    }
+                                } else {
+                                    i + 1
                                 }
-                                ShouldAddNewRow::No => last_transaction_index,
-                            }
-                        } else {
-                            i + 1
-                        }
-                    },
-                )
-            })
-            .flatten();
-        self.update_selected(i);
+                            },
+                        )
+                    })
+                    .flatten();
+                self.update_selected(i);
+            }
+            FocusArea::Filter => {
+                self.update_selected(Some(0));
+            }
+        }
     }
 
     fn previous_row(&mut self) {
-        let i = self
-            .table_state
-            .selected()
-            .map(|i| if i == 0 { 0 } else { i - 1 });
-        self.update_selected(i);
+        match self.focus {
+            FocusArea::Table => {
+                let i = self
+                    .table_state
+                    .selected()
+                    .map(|i| if i == 0 { 0 } else { i - 1 });
+                self.update_selected(i);
+            }
+            FocusArea::Filter => {
+                self.update_selected(Some(0));
+            }
+        }
     }
 
     fn first_row(&mut self) {
-        match self.transactions_table.filtered_len() {
-            0 => self.update_selected(None),
-            _ => self.update_selected(Some(0)),
+        match self.focus {
+            FocusArea::Table => match self.transactions_table.filtered_len() {
+                0 => self.update_selected(None),
+                _ => self.update_selected(Some(0)),
+            },
+            FocusArea::Filter => {
+                self.update_selected(Some(0));
+            }
         }
     }
 
     pub fn last_row(&mut self) {
-        let i = self.transactions_table.filtered_len().checked_sub(1);
-        self.update_selected(i);
+        match self.focus {
+            FocusArea::Table => {
+                let i = self.transactions_table.filtered_len().checked_sub(1);
+                self.update_selected(i);
+            }
+            FocusArea::Filter => {
+                self.update_selected(Some(0));
+            }
+        }
     }
 
     pub fn select_first_column(&mut self) {
-        self.table_state.select_column(Some(0));
+        let state = match self.focus {
+            FocusArea::Table => &mut self.table_state,
+            FocusArea::Filter => &mut self.filter_state,
+        };
+        state.select_column(Some(0));
         self.update_editing_text();
     }
 
     fn next_column(&mut self) {
-        if self.table_state.selected_column() == Some(TransactionField::widths().len() - 1) {
+        let state = match self.focus {
+            FocusArea::Table => &mut self.table_state,
+            FocusArea::Filter => &mut self.filter_state,
+        };
+        if state.selected_column() == Some(TransactionField::widths().len() - 1) {
             self.select_first_column();
             self.next_row(ShouldAddNewRow::No);
         } else {
-            self.table_state.select_next_column();
+            state.select_next_column();
         }
         self.update_editing_text();
     }
 
     fn previous_column(&mut self) {
-        self.table_state.select_previous_column();
+        let state = match self.focus {
+            FocusArea::Table => &mut self.table_state,
+            FocusArea::Filter => &mut self.filter_state,
+        };
+        state.select_previous_column();
         self.update_editing_text();
     }
 
@@ -225,11 +313,32 @@ impl InputPage {
     }
 
     fn commit_input(&mut self) -> Result<(), String> {
-        if let Some((row, column)) = self.table_state.selected_cell() {
-            self.transactions_table
-                .update_transaction(row, column, &self.input)?;
+        match self.focus {
+            FocusArea::Table => {
+                if let Some((row, column)) = self.table_state.selected_cell() {
+                    self.transactions_table
+                        .update_transaction(row, column, &self.input)?;
+                }
+            }
+            FocusArea::Filter => {
+                if let Some((_, column)) = self.filter_state.selected_cell() {
+                    self.filter_transaction
+                        .as_mut()
+                        .map(|t| t.mutate_field(column, &self.input))
+                        .transpose()?;
+                }
+            }
         }
         Ok(())
+    }
+
+    fn update_focus(&mut self) {
+        self.focus.toggle();
+        if self.focus == FocusArea::Filter && self.filter_transaction.is_none() {
+            self.filter_transaction = Some(self.transactions_table.new_transaction_from_filter());
+            self.filter_state.select(Some(0));
+        }
+        self.update_editing_text();
     }
 
     pub fn handle_key_events(&mut self, key: KeyEvent) {
@@ -256,13 +365,7 @@ impl InputPage {
                 KeyCode::PageUp => self.first_row(),
                 KeyCode::PageDown => self.last_row(),
                 KeyCode::Char('d') if ctrl_pressed => self.delete_transaction(),
-                KeyCode::Char('f') if ctrl_pressed => {
-                    if self.filter_transaction.is_none() {
-                        self.filter_transaction =
-                            Some(self.transactions_table.new_transaction_from_filter());
-                    }
-                    self.filter_focused = !self.filter_focused
-                }
+                KeyCode::Char('f') if ctrl_pressed => self.update_focus(),
                 KeyCode::Backspace => self.delete_char(),
                 KeyCode::Delete => self.delete_char_forward(),
                 KeyCode::Left => self.move_cursor_left(),
@@ -276,15 +379,20 @@ impl InputPage {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
+        let filter_height: u16 = if self.focus == FocusArea::Filter {
+            6
+        } else {
+            0
+        };
         let vertical = &Layout::vertical([
-            Constraint::Length(self.filter_focused as u16 * 5),
+            Constraint::Length(filter_height),
             Constraint::Min(5),
             Constraint::Length(3),
         ]);
         let rects = vertical.split(area);
 
         self.render_filter_bar(frame, rects[0], colors);
-        self.render_table(frame, rects[1], colors);
+        self.render_transactions_table(frame, rects[1], colors);
         self.render_edit_bar(frame, rects[2], colors);
         let (cursor_y, cursor_x) = (rects[2].as_position().y + 1, rects[2].as_position().x + 1);
         frame.set_cursor_position(Position::new(
@@ -293,7 +401,12 @@ impl InputPage {
         ));
     }
 
-    pub fn render_table(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
+    pub fn render_transactions_table(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        colors: &TableColors,
+    ) {
         let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
 
         let header = TransactionField::names()
@@ -319,6 +432,32 @@ impl InputPage {
         frame.render_stateful_widget(t, area, &mut self.table_state);
     }
 
+    fn render_filter_bar(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
+        let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
+
+        let header = TransactionField::names()
+            .into_iter()
+            .map(|name| Cell::from(name))
+            .collect::<Row>()
+            .style(header_style)
+            .height(1);
+
+        if let Some(filter_transaction) = &self.filter_transaction {
+            let row = filter_transaction.generate_row();
+            let color = colors.normal_row_color;
+            let row = row
+                .style(Style::new().fg(colors.row_fg).bg(color))
+                .height(3);
+
+            let t = add_design_to_table(
+                Table::new([row], TransactionField::widths()),
+                header,
+                colors,
+            );
+            frame.render_stateful_widget(t, area, &mut self.filter_state);
+        }
+    }
+
     fn render_edit_bar(&self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let edit_text = Line::from(vec![
             Span::from(&self.input),
@@ -334,41 +473,5 @@ impl InputPage {
                     .border_style(Style::new().fg(colors.border_color)),
             );
         frame.render_widget(edit_bar, area);
-    }
-
-    fn render_filter_bar(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
-        if let Some(filter_transaction) = &self.filter_transaction {
-            let row = filter_transaction.generate_row();
-            let color = colors.normal_row_color;
-            let row = row
-                .style(Style::new().fg(colors.row_fg).bg(color))
-                .height(3);
-
-            let table = Table::new(vec![row], TransactionField::widths());
-
-            let selected_row_style = Style::default()
-                .add_modifier(Modifier::REVERSED)
-                .fg(colors.selected_row_style_fg);
-            let selected_col_style = Style::default().fg(colors.selected_column_style_fg);
-            let selected_cell_style = Style::default()
-                .add_modifier(Modifier::REVERSED)
-                .fg(colors.selected_cell_style_fg);
-            let bar = " █ ";
-            let formatted_table = table
-                .bg(colors.buffer_bg)
-                .highlight_spacing(HighlightSpacing::Always)
-                .block(
-                    Block::bordered()
-                        .border_type(BorderType::Double)
-                        .border_style(Style::new().fg(colors.border_color)),
-                );
-            let t = formatted_table
-                .row_highlight_style(selected_row_style)
-                .column_highlight_style(selected_col_style)
-                .cell_highlight_style(selected_cell_style)
-                .highlight_symbol(Text::from(vec!["".into(), bar.into(), "".into()]));
-
-            frame.render_stateful_widget(t, area, &mut self.filter_state);
-        }
     }
 }
