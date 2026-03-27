@@ -624,10 +624,10 @@ impl TransactionsTable {
 
     pub fn filtered_transactions(&self) -> impl Iterator<Item = &Transaction> {
         self.transactions.iter().filter(|transaction| {
-            let dir_matches = transaction.direction.contains(&self.filter.direction);
-            let ctg_matches = transaction.category.contains(&self.filter.category);
-            let details_matches = transaction.details.contains(&self.filter.details);
-            let method_matches = transaction.method.contains(&self.filter.method);
+            let dir_matches = matches_ignore_case(&transaction.direction, &self.filter.direction);
+            let ctg_matches = matches_ignore_case(&transaction.category, &self.filter.category);
+            let details_matches = matches_ignore_case(&transaction.details, &self.filter.details);
+            let method_matches = matches_ignore_case(&transaction.method, &self.filter.method);
             let year_matches = self
                 .filter
                 .year
@@ -636,12 +636,13 @@ impl TransactionsTable {
                 .filter
                 .month
                 .map_or(true, |month| transaction.date.month == month);
-            dir_matches
+
+            return dir_matches
                 && ctg_matches
                 && details_matches
                 && method_matches
                 && year_matches
-                && month_matches
+                && month_matches;
         })
     }
 
@@ -763,4 +764,8 @@ impl TransactionsTable {
     pub fn generate_report(&self) -> TransactionsReport {
         TransactionsReport::new(&self.transactions)
     }
+}
+
+fn matches_ignore_case(a: &str, b: &str) -> bool {
+    a.to_lowercase().contains(&b.to_lowercase())
 }
