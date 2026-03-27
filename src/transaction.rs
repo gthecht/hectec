@@ -556,7 +556,6 @@ impl Filter {
 
 pub struct TransactionsTable {
     transactions: Vec<Transaction>,
-    recommended_input: Option<String>,
     file_path: PathBuf,
     file_type: FileType,
     filter: Filter,
@@ -567,7 +566,6 @@ impl TransactionsTable {
         let file_type = FileType::new(&file_path);
         Self {
             transactions: Vec::new(),
-            recommended_input: None,
             file_path,
             file_type,
             filter: Filter::default(),
@@ -692,10 +690,6 @@ impl TransactionsTable {
     ) -> Result<(), String> {
         let row = self.get_unfiltered_row(row);
         if let Some(transaction) = self.transactions.get_mut(row) {
-            let input = self
-                .recommended_input
-                .as_ref()
-                .map_or(input, |r| r.as_str());
             transaction.mutate_field(column, input)?
         }
         Ok(())
@@ -737,12 +731,17 @@ impl TransactionsTable {
             .find(|transaction| transaction.get_field_text(field).starts_with(input))
     }
 
-    pub fn update_recommended_input(&mut self, row: usize, column: usize, input: &str) {
+    pub fn update_recommended_input(
+        &mut self,
+        row: usize,
+        column: usize,
+        input: &str,
+    ) -> Option<String> {
         if let Some(field) = TransactionField::get(column) {
             let row = self.get_unfiltered_row(row);
             if input.chars().count() > 0 {
                 // look for a previous input of the same field that starts with the given input
-                self.recommended_input = self
+                return self
                     .find_recommended_transactions_by_field(row, &field, input)
                     .map(|transaction| transaction.get_field_text(&field));
             } else {
@@ -753,33 +752,16 @@ impl TransactionsTable {
                     .map_or("".to_string(), |transaction| {
                         transaction.get_field_text(&TransactionField::Details)
                     });
-                self.recommended_input = self
+                return self
                     .find_recommended_transactions_by_field(
                         row,
                         &TransactionField::Details,
                         &input_details,
                     )
-                    .map(|transaction| transaction.get_field_text(&field))
+                    .map(|transaction| transaction.get_field_text(&field));
             }
         }
-    }
-
-    pub fn get_recommended_input(&self, input: &str) -> &str {
-        self.recommended_input
-            .as_ref()
-            .map(|recommended_input| {
-                let input_len = input.chars().count();
-                if input_len > recommended_input.chars().count() {
-                    ""
-                } else {
-                    &recommended_input[input_len..]
-                }
-            })
-            .unwrap_or("")
-    }
-
-    pub fn clear_recommended_input(&mut self) {
-        self.recommended_input = None;
+        None
     }
 
     pub fn len(&self) -> usize {

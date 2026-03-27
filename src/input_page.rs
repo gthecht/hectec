@@ -45,6 +45,7 @@ pub struct InputPage {
     filter: Option<Filter>,
     focus: FocusArea,
     filter_state: TableState,
+    recommended_input: Option<String>,
 }
 
 impl InputPage {
@@ -59,6 +60,7 @@ impl InputPage {
             filter: None,
             focus: FocusArea::Table,
             filter_state: TableState::default().with_selected(0),
+            recommended_input: None,
         }
     }
 
@@ -74,16 +76,37 @@ impl InputPage {
         Ok(())
     }
 
+    pub fn get_recommended_input(&self, input: &str) -> &str {
+        self.recommended_input
+            .as_ref()
+            .map(|recommended_input| {
+                let input_len = input.chars().count();
+                if input_len > recommended_input.chars().count() {
+                    ""
+                } else {
+                    &recommended_input[input_len..]
+                }
+            })
+            .unwrap_or("")
+    }
+
+    pub fn clear_recommended_input(&mut self) {
+        self.recommended_input = None;
+    }
+
     fn update_editing_text(&mut self) {
         match self.focus {
             FocusArea::Table => {
                 if let Some((row, column)) = self.table_state.selected_cell() {
                     if let Some(editing_text) = self.transactions_table.get_cell_text(row, column) {
                         self.input = editing_text.clone();
-                        self.error_msg = "".to_string();
+                        self.error_msg.clear();
                         self.character_index = self.input.chars().count();
-                        self.transactions_table
-                            .update_recommended_input(row, column, &self.input);
+                        self.recommended_input = self.transactions_table.update_recommended_input(
+                            row,
+                            column,
+                            &self.input,
+                        );
                     }
                 }
             }
@@ -93,11 +116,8 @@ impl InputPage {
                         self.filter.as_ref().map(|t| t.get_column_text(column))
                     {
                         self.input = editing_text.clone();
-                        self.error_msg = "".to_string();
+                        self.error_msg.clear();
                         self.character_index = self.input.chars().count();
-                        let row = self.transactions_table.filtered_len();
-                        self.transactions_table
-                            .update_recommended_input(row, column, &self.input);
                     }
                 }
                 if let Some(filter_transaction) = self.filter.as_ref() {
@@ -271,15 +291,22 @@ impl InputPage {
     }
 
     fn update_recommendation(&mut self) {
-        if let Some((row, column)) = self.table_state.selected_cell() {
-            self.transactions_table
-                .update_recommended_input(row, column, &self.input);
+        if self.focus == FocusArea::Table {
+            if let Some((row, column)) = self.table_state.selected_cell() {
+                self.recommended_input =
+                    self.transactions_table
+                        .update_recommended_input(row, column, &self.input);
+            }
         }
     }
 
     fn enter_char(&mut self, ch: char) {
         let index = self.editing_text_byte_index();
         self.input.insert(index, ch);
+        match self.commit_input(false) {
+            Ok(()) => self.error_msg.clear(),
+            Err(err) => self.error_msg = err,
+        }
         self.move_cursor_right();
         self.update_recommendation();
     }
@@ -294,6 +321,10 @@ impl InputPage {
             let after_char_to_delete = self.input.chars().skip(current_index);
 
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
+            match self.commit_input(false) {
+                Ok(()) => self.error_msg.clear(),
+                Err(err) => self.error_msg = err,
+            }
             self.move_cursor_left();
             self.update_recommendation();
         }
@@ -305,27 +336,34 @@ impl InputPage {
         if self.character_index > current_character_index {
             self.delete_char();
         } else {
-            self.transactions_table.clear_recommended_input();
+            self.clear_recommended_input();
         }
     }
 
-    fn commit_input(&mut self) -> Result<(), String> {
+    fn commit_input(&mut self, with_recommended_input: bool) -> Result<(), String> {
+        let input = if with_recommended_input {
+            self.recommended_input.as_deref().unwrap_or(&self.input)
+        } else {
+            &self.input
+        };
+
         match self.focus {
             FocusArea::Table => {
                 if let Some((row, column)) = self.table_state.selected_cell() {
                     self.transactions_table
-                        .update_transaction(row, column, &self.input)?;
+                        .update_transaction(row, column, input)?;
                 }
             }
             FocusArea::Filter => {
                 if let Some((_, column)) = self.filter_state.selected_cell() {
                     self.filter
                         .as_mut()
-                        .map(|t| t.mutate_field(column, &self.input))
+                        .map(|t| t.mutate_field(column, input))
                         .transpose()?;
                 }
             }
         }
+        // self.update_editing_text();
         Ok(())
     }
 
@@ -338,6 +376,7 @@ impl InputPage {
             self.filter_state.select(Some(0));
             self.select_first_column();
         }
+        self.clear_recommended_input();
         self.update_editing_text();
     }
 
@@ -345,18 +384,18 @@ impl InputPage {
         if key.kind == KeyEventKind::Press {
             let ctrl_pressed = ctrl_is_pressed(&key);
             match key.code {
-                KeyCode::Enter => match self.commit_input() {
+                KeyCode::Enter => match self.commit_input(true) {
                     Ok(()) => {
                         self.select_first_column();
                         self.next_row(ShouldAddNewRow::Yes);
                     }
                     Err(error) => self.error_msg = error.to_string(),
                 },
-                KeyCode::Tab => match self.commit_input() {
+                KeyCode::Tab => match self.commit_input(true) {
                     Ok(()) => self.next_column(),
                     Err(error) => self.error_msg = error.to_string(),
                 },
-                KeyCode::BackTab => match self.commit_input() {
+                KeyCode::BackTab => match self.commit_input(true) {
                     Ok(()) => self.previous_column(),
                     Err(error) => self.error_msg = error.to_string(),
                 },
@@ -457,9 +496,8 @@ impl InputPage {
     fn render_edit_bar(&self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let edit_text = Line::from(vec![
             Span::from(&self.input),
+            Span::from(self.get_recommended_input(&self.input)).fg(tailwind::SLATE.c600),
             Span::from(&self.error_msg).fg(tailwind::ROSE.c600),
-            Span::from(self.transactions_table.get_recommended_input(&self.input))
-                .fg(tailwind::SLATE.c600),
         ]);
         let edit_bar = Paragraph::new(edit_text)
             .style(Style::new().fg(colors.row_fg).bg(colors.buffer_bg))
