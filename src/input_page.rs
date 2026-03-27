@@ -120,10 +120,6 @@ impl InputPage {
                         self.character_index = self.input.chars().count();
                     }
                 }
-                if let Some(filter_transaction) = self.filter.as_ref() {
-                    self.transactions_table
-                        .set_filter(filter_transaction.clone());
-                }
             }
         }
     }
@@ -418,6 +414,11 @@ impl InputPage {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
+        if let Some(filter_transaction) = self.filter.as_ref() {
+            self.transactions_table
+                .set_filter(filter_transaction.clone());
+        }
+
         let filter_height: u16 = if self.focus == FocusArea::Filter {
             6
         } else {
