@@ -89,11 +89,8 @@ impl InputPage {
             }
             FocusArea::Filter => {
                 if let Some((_, column)) = self.filter_state.selected_cell() {
-                    if let Some(editing_text) = self
-                        .filter
-                        .as_ref()
-                        .map(|t| t.get_column_text(column))
-                        .flatten()
+                    if let Some(editing_text) =
+                        self.filter.as_ref().map(|t| t.get_column_text(column))
                     {
                         self.input = editing_text.clone();
                         self.error_msg = "".to_string();
@@ -438,7 +435,7 @@ impl InputPage {
     fn render_filter_bar(&mut self, frame: &mut Frame, area: Rect, colors: &TableColors) {
         let header_style = Style::default().fg(colors.header_fg).bg(colors.header_bg);
 
-        let header = TransactionField::names()
+        let header = Filter::column_names()
             .into_iter()
             .map(|name| Cell::from(name))
             .collect::<Row>()
@@ -452,11 +449,7 @@ impl InputPage {
                 .style(Style::new().fg(colors.row_fg).bg(color))
                 .height(3);
 
-            let t = add_design_to_table(
-                Table::new([row], TransactionField::widths()),
-                header,
-                colors,
-            );
+            let t = add_design_to_table(Table::new([row], Filter::column_widths()), header, colors);
             frame.render_stateful_widget(t, area, &mut self.filter_state);
         }
     }

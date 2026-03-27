@@ -435,8 +435,8 @@ impl TransactionsReport {
 
 #[derive(Default, Clone)]
 pub struct Filter {
-    month_in_year: Option<MonthInYear>,
-    amount: Option<f64>,
+    year: Option<i32>,
+    month: Option<u8>,
     details: String,
     category: String,
     method: String,
@@ -450,9 +450,12 @@ impl Filter {
         category: Option<String>,
         month_in_year: Option<MonthInYear>,
     ) -> Self {
+        let (year, month) = month_in_year
+            .map(|(y, m)| (Some(y), Some(m)))
+            .unwrap_or((None, None));
         Self {
-            month_in_year,
-            amount: None,
+            year,
+            month,
             details: "".to_string(),
             category: category.unwrap_or_default(),
             method: "".to_string(),
@@ -463,8 +466,8 @@ impl Filter {
 
     pub fn from_transaction(transaction: &Transaction) -> Self {
         Self {
-            month_in_year: Some((transaction.date.year, transaction.date.month)),
-            amount: None,
+            year: Some(transaction.date.year),
+            month: Some(transaction.date.month),
             details: transaction.details.clone(),
             category: transaction.category.clone(),
             method: transaction.method.clone(),
@@ -474,117 +477,80 @@ impl Filter {
     }
 
     pub fn generate_row(&self) -> Row<'_> {
-        let cells: Vec<Cell> = TransactionField::all_fields()
+        let cells: Vec<Cell> = (0..6)
             .into_iter()
-            .map(|field| self.get_field_text(&field))
+            .map(|field| self.get_column_text(field))
             .map(|text| Cell::from(Text::from(format!("\n{}\n", text))))
             .collect();
         Row::new(cells)
     }
 
-    // TODO cleanup
-    fn merge(&self, other: &Self) -> Self {
-        let direction = if self.direction.is_empty() {
-            other.direction.clone()
-        } else {
-            self.direction.clone()
-        };
-
-        let category = if self.category.is_empty() {
-            other.category.clone()
-        } else {
-            self.category.clone()
-        };
-
-        let month_in_year = if self.month_in_year.is_none() {
-            other.month_in_year.clone()
-        } else {
-            self.month_in_year.clone()
-        };
-
-        let method = if self.method.is_empty() {
-            other.method.clone()
-        } else {
-            self.method.clone()
-        };
-
-        let details = if self.details.is_empty() {
-            other.details.clone()
-        } else {
-            self.details.clone()
-        };
-
-        let currency = if self.currency.is_empty() {
-            other.currency.clone()
-        } else {
-            self.currency.clone()
-        };
-
-        Self {
-            month_in_year,
-            amount: None,
-            details,
-            category,
-            method,
-            direction,
-            currency,
-        }
-    }
-
-    pub fn get_column_text(&self, field_index: usize) -> Option<String> {
-        TransactionField::get(field_index).map(|field| self.get_field_text(&field))
-    }
-
-    fn get_field_text(&self, field: &TransactionField) -> String {
-        match field {
-            TransactionField::Date => match self.month_in_year {
-                Some((year, month)) => format!("{}-{:02}", year, month),
+    pub fn get_column_text(&self, field_index: usize) -> String {
+        let output = match field_index {
+            0 => match self.year {
+                Some(year) => format!("{:04}", year),
                 None => "".to_string(),
             },
-            TransactionField::Amount => "".to_string(),
-            TransactionField::Details => self.details.clone(),
-            TransactionField::Category => self.category.clone(),
-            TransactionField::Method => self.method.clone(),
-            TransactionField::Direction => self.direction.clone(),
-            TransactionField::Currency => self.currency.clone(),
-        }
+            1 => match self.month {
+                Some(month) => format!("{:02}", month),
+                None => "".to_string(),
+            },
+            2 => self.details.clone(),
+            3 => self.category.clone(),
+            4 => self.method.clone(),
+            5 => self.direction.clone(),
+            6 => self.currency.clone(),
+            _ => "".to_string(),
+        };
+        output
     }
 
-    fn mutate_field_by_transaction_field(
-        &mut self,
-        field: TransactionField,
-        input: &str,
-    ) -> Result<(), String> {
-        match field {
-            TransactionField::Date => {
+    pub fn mutate_field(&mut self, field_index: usize, input: &str) -> Result<(), String> {
+        match field_index {
+            0 => {
                 if input.is_empty() {
-                    self.month_in_year = None;
+                    self.year = None;
                 } else {
-                    let parts: Vec<&str> = input.split("-").collect();
-                    if parts.len() > 3 {
-                        return Err("invalid date format, expected YYYY-MM-DD, YYYY-MM".to_string());
-                    }
-                    let year = parts[0].parse::<i32>().map_err(|e| e.to_string())?;
-                    let month = parts[1].parse::<u8>().map_err(|e| e.to_string())?;
-                    self.month_in_year = Some((year, month));
+                    let year = input.parse::<i32>().map_err(|e| e.to_string())?;
+                    self.year = Some(year);
                 }
                 return Ok(());
             }
-            TransactionField::Amount => {}
-            TransactionField::Details => self.details = input.to_string(),
-            TransactionField::Category => self.category = input.to_string(),
-            TransactionField::Method => self.method = input.to_string(),
-            TransactionField::Direction => self.direction = input.to_string(),
-            TransactionField::Currency => self.currency = input.to_string(),
+            1 => {
+                if input.is_empty() {
+                    self.month = None;
+                } else {
+                    self.month = Some(input.parse::<u8>().map_err(|e| e.to_string())?);
+                }
+                return Ok(());
+            }
+            2 => self.details = input.to_string(),
+            3 => self.category = input.to_string(),
+            4 => self.method = input.to_string(),
+            5 => self.direction = input.to_string(),
+            6 => self.currency = input.to_string(),
+            _ => return Err("Invalid field index".to_string()),
         }
         Ok(())
     }
 
-    pub fn mutate_field(&mut self, field_index: usize, input: &str) -> Result<(), String> {
-        match TransactionField::get(field_index) {
-            Some(field) => self.mutate_field_by_transaction_field(field, input),
-            None => Ok(()),
-        }
+    pub fn column_widths() -> Vec<u16> {
+        vec![11, 10, 100, 15, 9, 9, 9]
+    }
+
+    pub fn column_names() -> Vec<String> {
+        vec![
+            "Year",
+            "Month",
+            "Details",
+            "Category",
+            "Method",
+            "Direction",
+            "Currency",
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 }
 
@@ -676,15 +642,20 @@ impl TransactionsTable {
             let ctg_matches = transaction.category.contains(&self.filter.category);
             let details_matches = transaction.details.contains(&self.filter.details);
             let method_matches = transaction.method.contains(&self.filter.method);
-            let date_matches = self
+            let year_matches = self
                 .filter
-                .month_in_year
-                .as_ref()
-                .map_or(true, |month_in_year| {
-                    transaction.date.year == month_in_year.0
-                        && transaction.date.month == month_in_year.1
-                });
-            dir_matches && ctg_matches && details_matches && method_matches && date_matches
+                .year
+                .map_or(true, |year| transaction.date.year == year);
+            let month_matches = self
+                .filter
+                .month
+                .map_or(true, |month| transaction.date.month == month);
+            dir_matches
+                && ctg_matches
+                && details_matches
+                && method_matches
+                && year_matches
+                && month_matches
         })
     }
 
