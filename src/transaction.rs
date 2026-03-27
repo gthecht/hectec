@@ -464,18 +464,6 @@ impl Filter {
         }
     }
 
-    pub fn from_transaction(transaction: &Transaction) -> Self {
-        Self {
-            year: Some(transaction.date.year),
-            month: Some(transaction.date.month),
-            details: transaction.details.clone(),
-            category: transaction.category.clone(),
-            method: transaction.method.clone(),
-            direction: transaction.direction.clone(),
-            currency: transaction.currency.clone(),
-        }
-    }
-
     pub fn generate_row(&self) -> Row<'_> {
         let cells: Vec<Cell> = (0..6)
             .into_iter()

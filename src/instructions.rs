@@ -9,12 +9,13 @@ use ratatui::{
 use crate::TableColors;
 
 const ONELINE_INSTRUCTIONS: [&str; 1] =
-    ["ESC => save & quit | CTRL+O => expand help instructions | CTRL+C => change color"];
+    ["ESC => save & quit | CTRL+O => expand help instructions | CTRL+F => toggle filter"];
 
-const FULL_INSTRUCTIONS_HEIGHT: u16 = 16;
+const FULL_INSTRUCTIONS_HEIGHT: u16 = 17;
 const FULL_INSTRUCTIONS: [&str; FULL_INSTRUCTIONS_HEIGHT as usize] = [
     "ESC => save & quit",
     "CTRL+O => collapse help instructions",
+    "CTRL+F => open or close transactions filter",
     "CTRL+C => change color",
     "CTRL+R => toggle between insert mode and report mode",
     "↑ => one line up | ↓/ENTER => one line down",

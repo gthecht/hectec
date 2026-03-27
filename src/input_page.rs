@@ -125,16 +125,9 @@ impl InputPage {
     }
 
     fn update_selected(&mut self, i: Option<usize>) {
-        match self.focus {
-            FocusArea::Table => {
-                self.table_state.select(i);
-                // each row is of height 4
-                self.scroll_state = self.scroll_state.position(i.map_or(0, |i| i * 4));
-            }
-            FocusArea::Filter => {
-                self.filter_state.select(Some(0));
-            }
-        }
+        self.table_state.select(i);
+        // each row is of height 4
+        self.scroll_state = self.scroll_state.position(i.map_or(0, |i| i * 4));
         self.update_editing_text();
     }
 
@@ -147,79 +140,54 @@ impl InputPage {
             }
             FocusArea::Filter => {
                 self.filter = None;
+                self.update_focus();
             }
         }
     }
 
     fn next_row(&mut self, add_new_row_if_end: ShouldAddNewRow) {
-        match self.focus {
-            FocusArea::Table => {
-                let i = self
-                    .table_state
-                    .selected()
-                    .map(|i| {
-                        self.transactions_table.filtered_len().checked_sub(1).map(
-                            |last_transaction_index| {
-                                if i >= last_transaction_index {
-                                    match add_new_row_if_end {
-                                        ShouldAddNewRow::Yes => {
-                                            self.transactions_table.new_transaction();
-                                            last_transaction_index + 1
-                                        }
-                                        ShouldAddNewRow::No => last_transaction_index,
-                                    }
-                                } else {
-                                    i + 1
+        let i = self
+            .table_state
+            .selected()
+            .map(|i| {
+                self.transactions_table.filtered_len().checked_sub(1).map(
+                    |last_transaction_index| {
+                        if i >= last_transaction_index {
+                            match add_new_row_if_end {
+                                ShouldAddNewRow::Yes => {
+                                    self.transactions_table.new_transaction();
+                                    last_transaction_index + 1
                                 }
-                            },
-                        )
-                    })
-                    .flatten();
-                self.update_selected(i);
-            }
-            FocusArea::Filter => {
-                self.update_selected(Some(0));
-            }
-        }
+                                ShouldAddNewRow::No => last_transaction_index,
+                            }
+                        } else {
+                            i + 1
+                        }
+                    },
+                )
+            })
+            .flatten();
+        self.update_selected(i);
     }
 
     fn previous_row(&mut self) {
-        match self.focus {
-            FocusArea::Table => {
-                let i = self
-                    .table_state
-                    .selected()
-                    .map(|i| if i == 0 { 0 } else { i - 1 });
-                self.update_selected(i);
-            }
-            FocusArea::Filter => {
-                self.update_selected(Some(0));
-            }
-        }
+        let i = self
+            .table_state
+            .selected()
+            .map(|i| if i == 0 { 0 } else { i - 1 });
+        self.update_selected(i);
     }
 
     fn first_row(&mut self) {
-        match self.focus {
-            FocusArea::Table => match self.transactions_table.filtered_len() {
-                0 => self.update_selected(None),
-                _ => self.update_selected(Some(0)),
-            },
-            FocusArea::Filter => {
-                self.update_selected(Some(0));
-            }
+        match self.transactions_table.filtered_len() {
+            0 => self.update_selected(None),
+            _ => self.update_selected(Some(0)),
         }
     }
 
     pub fn last_row(&mut self) {
-        match self.focus {
-            FocusArea::Table => {
-                let i = self.transactions_table.filtered_len().checked_sub(1);
-                self.update_selected(i);
-            }
-            FocusArea::Filter => {
-                self.update_selected(Some(0));
-            }
-        }
+        let i = self.transactions_table.filtered_len().checked_sub(1);
+        self.update_selected(i);
     }
 
     pub fn select_first_column(&mut self) {
@@ -366,9 +334,7 @@ impl InputPage {
     fn update_focus(&mut self) {
         self.focus.toggle();
         if self.focus == FocusArea::Filter && self.filter.is_none() {
-            self.filter = Some(Filter::from_transaction(
-                &self.transactions_table.new_transaction_from_filter(),
-            ));
+            self.filter = Some(Filter::new(None, None, None));
             self.filter_state.select(Some(0));
             self.select_first_column();
         }
@@ -381,10 +347,15 @@ impl InputPage {
             let ctrl_pressed = ctrl_is_pressed(&key);
             match key.code {
                 KeyCode::Enter => match self.commit_input(true) {
-                    Ok(()) => {
-                        self.select_first_column();
-                        self.next_row(ShouldAddNewRow::Yes);
-                    }
+                    Ok(()) => match self.focus {
+                        FocusArea::Table => {
+                            self.select_first_column();
+                            self.next_row(ShouldAddNewRow::Yes);
+                        }
+                        FocusArea::Filter => {
+                            self.update_focus();
+                        }
+                    },
                     Err(error) => self.error_msg = error.to_string(),
                 },
                 KeyCode::Tab => match self.commit_input(true) {
@@ -419,11 +390,8 @@ impl InputPage {
                 .set_filter(filter_transaction.clone());
         }
 
-        let filter_height: u16 = if self.focus == FocusArea::Filter {
-            6
-        } else {
-            0
-        };
+        let filter_height: u16 = if self.filter.is_some() { 6 } else { 0 };
+
         let vertical = &Layout::vertical([
             Constraint::Length(filter_height),
             Constraint::Min(5),
